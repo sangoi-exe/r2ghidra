@@ -2866,3 +2866,47 @@ INFO: pdgw: no changes
 INFO: pdgw: no changes
 EOF
 RUN
+
+NAME=exact native far conventions retain explicit record layout and entry stack storage
+FILE=malloc://128
+ARGS=-a x86 -b 16
+CMDS=<<EOF
+wx cb
+af+ 0 far_records
+afb+ 0 0 1
+e r2ghidra.lang=x86:LE:16:Protected Mode
+"td typedef unsigned short WORD;"
+"td struct FarAddress16 { WORD offset; WORD selector; };"
+tk struct.FarAddress16.selector=WORD,2,0
+"afs void far_records(FarAddress16 source, FarAddress16 destination, WORD byte_count)"
+tcc ax __cdecl16far(stack)
+afc __cdecl16far
+pdgd~prototype model=
+pdgd~addr space="stack"
+tcc ax borland_fmovmem_16far(stack)
+afc borland_fmovmem_16far
+pdgd~prototype model=
+pdgd~type name="FarAddress16"~size="4"~?
+pdgd~type name="WORD"~size="2"~metatype="uint"~?
+pdgd~field name=
+pdgd~addr space="stack"
+pdgd~void/
+pdg~far_records(
+EOF
+EXPECT=<<EOF
+            <prototype model="__cdecl16far" extrapop="4" modellock="true">
+                    <addr space="stack" offset="0xc"/>
+                    <addr space="stack" offset="0x8"/>
+                    <addr space="stack" offset="0x4"/>
+            <prototype model="borland_fmovmem_16far" extrapop="4" modellock="true">
+1
+1
+      <field name="offset" offset="0">
+      <field name="selector" offset="2">
+                    <addr space="stack" offset="0xc"/>
+                    <addr space="stack" offset="0x8"/>
+                    <addr space="stack" offset="0x4"/>
+                <void/>
+void borland_fmovmem_16far far_records(FarAddress16 source,FarAddress16 destination,WORD byte_count)
+EOF
+RUN

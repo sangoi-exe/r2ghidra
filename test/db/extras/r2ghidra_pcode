@@ -166,3 +166,42 @@ true
 3
 EOF
 RUN
+
+NAME=qualified Win16 fmovmem input keeps stack records and selector-bearing copy expressions
+FILE=malloc://128
+ARGS=-a x86 -b 16 -m 0x1000
+CMDS=<<EOF
+wx 45558bec56571e8b4e0c8b5e0a8b56088b46063bd1770c72043bc37306fdb80100eb03fc33c0c57606c47e0a8b4e0e0bc0740603f14e03f94ff7c701007404e311a4492bf02bf8d1e9f3a5730503f003f8a4fc1f5f5e5d4dcb45558bec5657ff760eff7608ff7606ff760cff760a0ee88eff83c40a8b56088b46065f5e5d4dcb
+af+ 0x1000 qualified_borland_fmovmem
+afb+ 0x1000 0x1000 89
+e r2ghidra.lang=x86:LE:16:Protected Mode
+"td typedef unsigned short WORD;"
+"td struct FarAddress16 { WORD offset; WORD selector; };"
+tk struct.FarAddress16.selector=WORD,2,0
+"afs void qualified_borland_fmovmem(FarAddress16 source, FarAddress16 destination, WORD byte_count)"
+tcc ax borland_fmovmem_16far(stack)
+afc borland_fmovmem_16far
+pdgx~addr space="stack" offset="0x4" size="4"~input="true"~?
+pdgx~addr space="stack" offset="0x8" size="4"~input="true"~?
+pdgx~addr space="stack" offset="0xc" size="2"~input="true"~?
+pdg~segmentop~!Stack_
+EOF
+EXPECT=<<EOF
+1
+1
+1
+    if ((*segmentop(unaff_SS,&destination.selector) < *segmentop(unaff_SS,&source.selector)) ||
+       ((*segmentop(unaff_SS,&destination.selector) <= *segmentop(unaff_SS,&source.selector) &&
+        (segmentop(unaff_SS,&destination)->offset <= segmentop(unaff_SS,&source)->offset)))) {
+    WVar13 = (*segmentop(unaff_SS,&source)).selector;
+    puVar8 = (*segmentop(unaff_SS,&source)).offset;
+    WVar12 = (*segmentop(unaff_SS,&destination)).selector;
+    puVar10 = (*segmentop(unaff_SS,&destination)).offset;
+    uVar6 = *segmentop(unaff_SS,&byte_count);
+        puVar3 = segmentop(WVar12,puVar10);
+        puVar1 = segmentop(WVar13,puVar8);
+        puVar4 = segmentop(WVar12,puVar11);
+        puVar2 = segmentop(WVar13,puVar9);
+        *segmentop(WVar12,puVar11 + iVar5) = *segmentop(WVar13,puVar9 + iVar5);
+EOF
+RUN

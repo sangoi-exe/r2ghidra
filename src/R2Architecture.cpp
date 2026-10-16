@@ -92,6 +92,10 @@ const std::vector<LanguageDescription> &R2Architecture::getLanguageDescriptions(
 }
 
 ProtoModel *R2Architecture::protoModelFromR2CC(const char *cc) {
+	auto native = protoModels.find (cc);
+	if (native != protoModels.end ()) {
+		return native->second;
+	}
 	auto it = cc_map.find (cc);
 	if (it != cc_map.end ()) {
 		for (const auto &name : it->second) {
