@@ -14,7 +14,7 @@ Run these commands from the radare2 source tree:
 
 ```console
 mkdir -p libr/xps/p
-ln -s ../../../../r2ghidra libr/xps/p/r2ghidra
+ln -s ../../../r2ghidra libr/xps/p/r2ghidra
 echo 'EXTERNAL_PLUGINS+=r2ghidra' >> libr/xps/config.mk
 make -C libr/xps clean all
 make -C libr/xps/p/r2ghidra/r2plugin prepare
