@@ -6,17 +6,17 @@ This is a narrow, explicitly supplied analysis contract, not automatic toolchain
 
 ## Build the matching local components
 
-`subprojects/ghidra-native.wrap` is the single engine URL/revision pin: Meson reads it directly, and `subprojects/ghidra-native.mk` derives its Make settings from it. It selects the `sangoi-exe/ghidra-native` fork at the exact qualified engine commit, not upstream 0.7.2. That commit exists in the local sibling checkout but has not been published by this work. Remote availability of the pinned commit remains unverified; a fresh network-only build is not yet established. Do not replace the pin with an older engine merely to make a remote fetch succeed.
+`subprojects/ghidra-native.wrap` is the single engine URL/revision pin: Meson reads it directly, and `subprojects/ghidra-native.mk` derives its Make settings from it. It selects the `sangoi-exe/ghidra-native` fork at the exact qualified engine commit, not upstream 0.7.2. That commit exists in the local direct-child checkout but has not been published by this work. Remote availability of the pinned commit remains unverified; a fresh network-only build is not yet established. Do not replace the pin with an older engine merely to make a remote fetch succeed.
 
-Until the commit is published, populate a fresh subproject from the matching local sibling. Run this from the r2ghidra repository root, with `../ghidra-native` pointing to that engine repository. The commands refuse an existing subproject path rather than switching or stashing someone else's checkout; use a fresh disposable r2ghidra source copy if that path is already occupied.
+Until the commit is published, populate a fresh subproject from the matching local direct child. Run this from the r2ghidra repository root, with `./ghidra-native` pointing to that editable engine repository. In a disposable r2ghidra source copy, supply the matching local engine repository at that direct-child path first. The commands refuse an existing subproject path rather than switching or stashing someone else's checkout; use a fresh disposable r2ghidra source copy if that path is already occupied.
 
 ```sh
 (
     set -eu
     test ! -e subprojects/ghidra-native
     revision=$(sed -n 's/^revision *= *//p' subprojects/ghidra-native.wrap)
-    git -C ../ghidra-native rev-parse --verify "$revision^{commit}"
-    git clone --no-hardlinks ../ghidra-native subprojects/ghidra-native
+    git -C ./ghidra-native rev-parse --verify "$revision^{commit}"
+    git clone --no-hardlinks ./ghidra-native subprojects/ghidra-native
     git -C subprojects/ghidra-native checkout --detach "$revision"
     test "$(git -C subprojects/ghidra-native rev-parse HEAD)" = "$revision"
 )

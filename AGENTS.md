@@ -1,0 +1,25 @@
+# r2ghidra component guide
+
+This independent repository owns the radare2-to-native-decompiler bridge. Paths and commands below are relative to this root. The [workspace map](../AGENTS.md) describes the host; its C source conventions do not replace this repository's existing C/C++ style. Follow nearby bridge code and the current build definitions.
+
+## Source and integration owners
+
+- `src/` owns plugin commands and host integration. Start with `src/R2Architecture.cpp` for native architecture/calling-convention selection, `src/R2TypeFactory.cpp` for host type translation, and `src/R2Scope.cpp` for function prototypes, variables and storage. Keep RE semantics at these code owners or the engine's patch/specification owners rather than duplicating them here.
+- `meson.build` owns the plugin and `pcode-xml-test` targets, C11/C++20 settings and the current `r_core` dependency (`>=6.1.4` outside the MSVC-specific library path). `Makefile.acr`, `src/Makefile` and `ghidra/deps.mk` own the Make path; `./configure` generates the root `Makefile`. Check the applicable Make, Meson and static integration followers when changing source lists or dependencies.
+- `ghidra/` owns processor-language compilation and installation using the engine's specifications and Sleigh compiler. The plugin and its runtime language files must match; moving a checkout does not configure runtime language selection.
+- `r2plugin/` owns static XPS integration with the host. See [r2plugin/README.md](r2plugin/README.md) and [the host XPS procedure](../libr/xps/README.md) before changing that build path.
+
+## Two distinct engine directories
+
+- `ghidra-native/` is the editable independent engine repository, excluded by this repository's root-anchored ignore. Read [its AGENTS.md](ghidra-native/AGENTS.md) before engine changes, and run Git in that root; this parent does not track the child or report its changes.
+- `subprojects/ghidra-native/` is the build-managed engine copy, not the editable checkout. `subprojects/ghidra-native.wrap` is the sole engine URL/revision owner: Meson reads it and `subprojects/ghidra-native.mk` derives Make settings from it. Changing the editable engine does not automatically change the build-managed copy or pin.
+- [doc/win16-fmovmem.md](doc/win16-fmovmem.md) provides the qualified local-engine population and private-build procedure. Preserve its existing-path refusal and matching plugin/language inputs. The Make subproject manager can stash changes and switch revisions; `make mrproper` deletes the managed engine and zlib directories. These are not routine validation commands for an arbitrary working checkout.
+
+## Build and verification
+
+- Use the intended radare2 executable on `PATH` and its development package through `PKG_CONFIG_PATH`; inspect `pkg-config --modversion r_core` before configuring. Use `meson setup <build-dir>` and `meson compile -C <build-dir>` for the normal Meson build, or the bounded targets and unpublished-local-pin procedure in the product document above. Do not replace the pin to work around fetch availability.
+- `test/db/extras/` owns plugin behavior regressions; `test/Makefile` runs them through `make -C test`. Ensure the tested executable actually loads this plugin and the matching language files rather than another installation.
+- `test/pcode_xml.cpp` owns the focused native p-code XML encoder test. Build `pcode-xml-test` with Meson, then run `meson test -C <build-dir> pcode-xml --print-errorlogs`; compiling the executable alone does not run it. Engine regression tests belong to the editable engine's local guide.
+- For documentation-only changes, resolve affected paths and inspect shell syntax without running build/install commands. Run `git diff --check` and inspect this repository's diff/status separately from the host and engine.
+
+Last reviewed: 2026-10-16. Update this guide when bridge ownership, build/test entry points or the editable/managed dependency boundary changes; refresh the workspace map for cross-repository changes. Shared agent workflow remains in its existing global owners.
