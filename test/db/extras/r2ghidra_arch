@@ -1,3 +1,50 @@
+NAME=NE x86 selects Protected Mode only at 16 bits
+FILE=bins/ne/anim8.exe
+CMDS=<<EOF
+pd:gss
+e asm.bits=32
+pd:gss
+e asm.bits=64
+pd:gss
+EOF
+EXPECT=<<EOF
+x86:LE:16:Protected Mode:
+x86:LE:32:default:
+x86:LE:64:default:
+EOF
+RUN
+
+NAME=MZ x86 retains Real Mode
+FILE=bins/mz/INSTALL.EXE
+CMDS=<<EOF
+pd:gss
+EOF
+EXPECT=<<EOF
+x86:LE:16:Real Mode:
+EOF
+RUN
+
+NAME=raw x86 retains Real Mode and explicit language overrides native analysis
+FILE=malloc://64
+ARGS=-a x86 -b 16
+CMDS=<<EOF
+pd:gss
+wx 9a00000200cb
+af+ 0 far_call
+afb+ 0 0 6
+pd:g~func_
+e r2ghidra.lang=x86:LE:16:Protected Mode
+pd:g~func_
+pd:gss
+EOF
+EXPECT=<<EOF
+x86:LE:16:Real Mode:
+    func_0x00000020();
+    func_0x00020000();
+x86:LE:16:Real Mode:
+EOF
+RUN
+
 NAME=x86_32
 FILE=bins/elf/crackme0x05
 EXPECT=<<EOF

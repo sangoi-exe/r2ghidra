@@ -136,7 +136,11 @@ static const std::map<std::string, ArchMapper> arch_map = {
 	{ "x86", {
 		"x86",
 		CUSTOM_FLAVOR((RCore *core) {
-			return (BITS == 16)? "Real Mode": "default";
+			if (BITS != 16) {
+				return "default";
+			}
+			RBinInfo *info = core? r_bin_get_info (core->bin): nullptr;
+			return (info && info->rclass && !strcmp (info->rclass, "ne"))? "Protected Mode": "Real Mode";
 		}), bits_mapper_default, E(false), 1, 16
 	}},
 	{ "mips", { S("MIPS"), S("default"), bits_mapper_default, big_endian_mapper_default, 4, 4 }},

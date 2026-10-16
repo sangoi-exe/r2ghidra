@@ -1,3 +1,24 @@
+NAME=NE automatic Protected Mode context yields to explicit Real Mode override
+FILE=bins/ne/anim8.exe
+ARGS=-e bin.relocs.apply=true
+CMDS=<<EOF
+af+ 0x10000 startup
+afb+ 0x10000 0x10000 5
+s 0x10000
+pd:gd~protectedMode
+e r2ghidra.lang=x86:LE:16:Real Mode
+pd:gd~protectedMode
+pd:gss
+EOF
+EXPECT=<<EOF
+      <set name="protectedMode" val="0x1"/>
+      <set name="protectedMode" val="0x0"/>
+      <set name="protectedMode" val="0x0"/>
+      <set name="protectedMode" val="0x0"/>
+x86:LE:16:Protected Mode:
+EOF
+RUN
+
 NAME=pdgx exports native dead-state metadata on each operation sequence
 FILE=-
 ARGS=-a x86 -b 64
