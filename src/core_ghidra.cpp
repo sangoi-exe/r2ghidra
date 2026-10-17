@@ -382,24 +382,24 @@ static void Decompile(RCore *core, ut64 addr, DecompileMode mode, std::stringstr
 	arch.getCore()->sleepBegin ();
 	auto action = arch.allacts.getCurrent ();
 
-	if (cfg_var_fixups.GetBool (core->config)) {
-		PcodeFixupPreprocessor::fixupSharedReturnJumpToRelocs(function, func, core, arch);
-	}
-	PcodeFixupPreprocessor::fixupNoreturnCallsBeforeData(function, func, core, arch);
-	PcodeFixupPreprocessor::fixupResolvedIndirectCalls(function, func, core, arch);
-	if (cfg_var_ccode.GetBool (core->config)) {
-		PcodeFixupPreprocessor::fixupImportCallDeindirection(function, func, core, arch);
-	}
-	if (cfg_var_varargs.GetBool (core->config)) {
-		PcodeFixupPreprocessor::fixupVariadicFormatCalls(function, func, core, arch);
-	}
-
 	PcodeSnapshot snapshot;
 	PcodeSnapshot *capture = exportDeadcode ? &snapshot : nullptr;
 	int res;
 #ifndef DEBUG_EXCEPTIONS
 	try {
 #endif
+		if (cfg_var_fixups.GetBool (core->config)) {
+			PcodeFixupPreprocessor::fixupSharedReturnJumpToRelocs(function, func, core, arch);
+		}
+		PcodeFixupPreprocessor::fixupCallsBeforeData(function, func, core, arch);
+		PcodeFixupPreprocessor::fixupResolvedIndirectCalls(function, func, core, arch);
+		if (cfg_var_ccode.GetBool (core->config)) {
+			PcodeFixupPreprocessor::fixupImportCallDeindirection(function, func, core, arch);
+		}
+		if (cfg_var_varargs.GetBool (core->config)) {
+			PcodeFixupPreprocessor::fixupVariadicFormatCalls(function, func, core, arch);
+		}
+
 		res = PerformWithSnapshot (*action, *func, capture);
 		if (capture && res >= 0) {
 			// Save normal elimination results before rendering the version that preserves unused code.

@@ -6,7 +6,7 @@ The manual helper procedure below is a narrow, explicitly supplied analysis cont
 
 ## Build the matching local components
 
-`subprojects/ghidra-native.wrap` is the single engine URL/revision pin: Meson reads it directly, and `subprojects/ghidra-native.mk` derives its Make settings from it. It selects the `sangoi-exe/ghidra-native` fork at the exact qualified engine commit, not upstream 0.7.2. The current pin is `c899e59609033ff416e533cea24eab499ed469dc`, which exists in the local direct-child checkout but has not been published by this work. The previous `8c0a00933c9d19d493c3858799bb3f8d0388f2fa` pin was published and fetched; that does not establish remote availability of the new pin. A fresh network-only build of the current pin is not yet established. Do not replace the pin with an older engine merely to make a remote fetch succeed.
+`subprojects/ghidra-native.wrap` is the single engine URL/revision pin: Meson reads it directly, and `subprojects/ghidra-native.mk` derives its Make settings from it. It selects the `sangoi-exe/ghidra-native` fork at the exact qualified engine commit, not upstream 0.7.2. The current pin is `cd9a067b7ec14bed6f6faaa5192343742bc1953e`, which exists in the local direct-child checkout but has not been published by this work. The previous `8c0a00933c9d19d493c3858799bb3f8d0388f2fa` pin was published and fetched; that does not establish remote availability of the new pin. A fresh network-only build of the current pin is not yet established. Do not replace the pin with an older engine merely to make a remote fetch succeed.
 
 Until the commit is published, populate a fresh subproject from the matching local direct child. Run this from the r2ghidra repository root, with `./ghidra-native` pointing to that editable engine repository. In a disposable r2ghidra source copy, supply the matching local engine repository at that direct-child path first. The commands refuse an existing subproject path rather than switching or stashing someone else's checkout; use a fresh disposable r2ghidra source copy if that path is already occupied.
 
@@ -75,7 +75,17 @@ The bridge consumes the host's canonical structured function signature: address-
 
 For the automatically qualified pairs, no `tcc` definition or manual `afs` replacement is required. The core uses `borland_fmovmem_16far`, returns void and takes `source`, `destination`, `byte_count`; the wrapper uses `borland_fmemmove_16far`, returns `FarAddress16` and takes `destination`, `source`, `byte_count`. Inspect the full function/context XML before and after a rename-only operation: the selected model must remain locked, both four-byte records must occupy entry stack offsets 4 and 8, and the two-byte count must occupy offset 12. Incoming SS remains symbolic, not zero or a guessed selector.
 
-This establishes pre-save native consumption only. Legacy project command replay can reject convention names that have no host definition; saved-project restoration and MCP file-switch behavior require separate production-path proof. Do not add fake host conventions to hide that persistence boundary.
+This automatic-consumption procedure establishes the pre-save native boundary. Legacy project command replay can reject convention names that have no host definition; that is distinct from command-free v8 project restoration and native MCP file-switch observations. The final cumulative continuation/project/MCP workflow still requires its matching-component production proof; this procedure alone does not supply it. Do not add fake host conventions to hide a persistence boundary.
+
+## Qualified TLINK51 inline-call continuation
+
+For actual `x86:LE:16:` decompilation, the call-before-data preprocessor queries the native host's readonly `a:borland:continuations` projection once. The required response is an object with boolean `recognized` and an array `continuations` of integer `call`/`resume` pairs. A missing producer or malformed response fails visibly; an old host is not a supported fallback. Nonmatching images retain the established call-before-literal-pool truncation, including ARM.
+
+For the exact recognized TLINK51 image, only current-qualified calls belonging to the current function receive the engine's `call_continuation` override, and only where native tracked-register storage actually supplies effective DF zero. A missing DF entry is not zero. An existing per-instruction native flow/destination override is preserved. Recognized images with refused, absent or DF-incompatible continuations never fall back to DATA-implies-noreturn. The host owns image/helper/caller/inline-byte qualification; the bridge does not duplicate that recognition or persist a qualification receipt.
+
+The native continuation operation retains the real decoded CALL target and the adjacent machine return address pushed on the stack, then adds a separate analyzed branch to the qualified resume. On the original TLINK51 input, the qualified analysis pairs are `0x1de2c → 0x1de37`, `0x1de3f → 0x1de4c`, `0x1de4e → 0x1de59`, `0x1deb2 → 0x1dec7`, `0x1ded1 → 0x1dee0`, `0x1dee9 → 0x1def1` and `0x1defd → 0x1df1c`. Use the matching host's normal qualified analysis before inspecting `pd:gsd`, `pd:gd`, `pd:gx` and C for the bounded callers. Inspect actual CALL operands, pushed adjacent returns, resume edges and absence of decoded inline bytes; nonempty C or an operation count alone is not proof. Changing the consumed length byte at file offset `0xf02f` from 7 to 6 must refuse the original continuation set, not retain the old resume or replace the call with `CallReturn`.
+
+Supplied/default DF zero is an analysis assumption, not proof of runtime DF, termination or return. These continuations do not establish unconditional completion, whole-function stack cleanup, or runtime selector validity; unknown cleanup and conditional-return properties remain unknown. Private task-cache processor-specification variants can expose DF one or absent tracked DF through the existing language input boundary when no host tracked-register setter exists; they are validation inputs, not new maintained specifications or runtime state.
 
 ## Manual alternative: supply the exact host contract
 
@@ -87,8 +97,6 @@ afb+ 0x110e8 0x110e8 89
 s 0x110e8
 "td typedef unsigned short WORD;"
 "td struct FarAddress16 { WORD offset; WORD selector; };"
-tk struct.FarAddress16.offset=WORD,0,0
-tk struct.FarAddress16.selector=WORD,2,0
 "afs void qualified_borland_fmovmem(FarAddress16 source, FarAddress16 destination, WORD byte_count)"
 tcc ax borland_fmovmem_16far(stack)
 afc borland_fmovmem_16far
@@ -99,7 +107,7 @@ pdgx
 pdg
 ```
 
-`td` alone is not layout qualification: the inspected host parser placed the second WORD at offset 4. The explicit `tk` member offsets supply the required packed four-byte record through the existing type database. Verify the imported native type is size 4 with size-2 unsigned fields at offsets 0 and 2. `FarAddress16` is an offset/selector storage record, not a native or host pointer.
+The current native C parser places these two WORD fields at offsets 0 and 2, without `tk` member-offset corrections. Verify that host layout and the imported native type are size 4 with size-2 unsigned fields at offsets 0 and 2. `FarAddress16` is an offset/selector storage record, not a native or host pointer.
 
 `afs` can reset the host calling convention, so apply `afc` afterward. In this manual alternative only, `tcc` registers the name with radare2 so `afc` accepts it; its AX/stack declaration does not define this native ABI or override the explicit void return. It is not a prerequisite for automatically applied facts. The exact native model, not a generated `r2:borland_fmovmem_16far`, must own parameter storage, far-return behavior, and register effects. Do not substitute host BP/SP variable offsets for inspected native storage, or reuse automatic argument variables from an earlier analysis.
 

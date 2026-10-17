@@ -13,6 +13,7 @@
 #include <override.hh>
 #include <database.hh>
 #include <fspec.hh>
+#include <globalcontext.hh>
 #include <type.hh>
 
 #include <r_core.h>
@@ -22,6 +23,7 @@
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -209,9 +211,58 @@ static bool has_data_xref_at(RCore *core, ut64 addr) {
 	return found;
 }
 
-// A call followed by a literal pool (data xref target) does not return; truncate flow so pdg stops instead of decoding the pool as code and emitting halt_baddata().
-void PcodeFixupPreprocessor::fixupNoreturnCallsBeforeData(RAnalFunction *r2Func, Funcdata *ghFunc, RCore *core, R2Architecture &arch) {
+static bool hasSuppliedDFZero(R2Architecture &arch, const Address &callAddress) {
+	const VarnodeData &df = arch.translate->getRegister ("DF");
+	ContextDatabase *context = arch.getContextDatabase ();
+	for (const TrackedContext &tracked : context->getTrackedSet (callAddress)) {
+		if (tracked.loc.space == df.space && tracked.loc.offset <= df.offset
+				&& tracked.loc.size >= df.size && df.offset - tracked.loc.offset <= tracked.loc.size - df.size) {
+			return context->getTrackedValue (df, callAddress) == 0;
+		}
+	}
+	return false;
+}
+
+// Qualified inline consumers resume beyond data; ordinary literal-pool calls retain the existing truncation heuristic.
+void PcodeFixupPreprocessor::fixupCallsBeforeData(RAnalFunction *r2Func, Funcdata *ghFunc, RCore *core, R2Architecture &arch) {
+	RCoreLock lock (arch.getCore ());
 	auto space = arch.getDefaultCodeSpace ();
+	if (arch.getTarget ().rfind ("x86:LE:16:", 0) == 0) {
+		char *response = r_core_cmd_str (core, "a:borland:continuations");
+		std::unique_ptr<RJson, decltype (&r_json_free)> projection (response? r_json_parsedup (response): nullptr, r_json_free);
+		free (response);
+		if (!projection || projection->type != R_JSON_OBJECT) {
+			throw LowlevelError ("Missing or invalid native a:borland:continuations projection");
+		}
+		const RJson *recognized = r_json_get (projection.get (), "recognized");
+		const RJson *continuations = r_json_get (projection.get (), "continuations");
+		if (!recognized || recognized->type != R_JSON_BOOLEAN
+				|| !continuations || continuations->type != R_JSON_ARRAY || (!recognized->num.u_value && continuations->children.count)) {
+			throw LowlevelError ("Missing or invalid native a:borland:continuations projection");
+		}
+		std::vector<std::pair<ut64, ut64>> pairs;
+		for (const RJson *pair = continuations->children.first; pair; pair = pair->next) {
+			if (pair->type != R_JSON_OBJECT) {
+				throw LowlevelError ("Invalid native a:borland:continuations pair");
+			}
+			const RJson *call = r_json_get (pair, "call");
+			const RJson *resume = r_json_get (pair, "resume");
+			if (!call || call->type != R_JSON_INTEGER || !resume || resume->type != R_JSON_INTEGER) {
+				throw LowlevelError ("Invalid native a:borland:continuations pair");
+			}
+			pairs.emplace_back (call->num.u_value, resume->num.u_value);
+		}
+		if (recognized->num.u_value) {
+			for (const auto &[call, resume] : pairs) {
+				Address callAddress (space, call);
+				if (r_anal_function_contains (r2Func, call) && !ghFunc->getOverride ().getPCodeOverride (callAddress)
+						&& hasSuppliedDFZero (arch, callAddress)) {
+					ghFunc->getOverride ().insertDestinationOverride (callAddress, Address (space, resume), Override::CallContinuation::NAME);
+				}
+			}
+			return;
+		}
+	}
 	const ut64 fcnMax = r_anal_function_max_addr (r2Func);
 	r_list_foreach_cpp<RAnalBlock> (r2Func->bbs, [&](RAnalBlock *bb) {
 		ut64 addr = bb->addr;
@@ -229,6 +280,7 @@ void PcodeFixupPreprocessor::fixupNoreturnCallsBeforeData(RAnalFunction *r2Func,
 			}
 			const ut64 next = addr + size;
 			if ((type == R_ANAL_OP_TYPE_CALL || type == R_ANAL_OP_TYPE_UCALL)
+					&& !ghFunc->getOverride ().getPCodeOverride (Address (space, addr))
 					&& next <= fcnMax && has_data_xref_at (core, next)) {
 				ghFunc->getOverride ().insertFlowOverride (Address (space, addr), Override::CallReturn::NAME);
 			}

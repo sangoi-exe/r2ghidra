@@ -12,7 +12,7 @@ class PcodeFixupPreprocessor
 {
 	public:
 		static void fixupSharedReturnJumpToRelocs(RAnalFunction *function, ghidra::Funcdata *func, RCore *core, R2Architecture &arch);
-		static void fixupNoreturnCallsBeforeData(RAnalFunction *function, ghidra::Funcdata *func, RCore *core, R2Architecture &arch);
+		static void fixupCallsBeforeData(RAnalFunction *function, ghidra::Funcdata *func, RCore *core, R2Architecture &arch);
 		static void fixupResolvedIndirectCalls(RAnalFunction *function, ghidra::Funcdata *func, RCore *core, R2Architecture &arch);
 		static void fixupImportCallDeindirection(RAnalFunction *function, ghidra::Funcdata *func, RCore *core, R2Architecture &arch);
 		static void fixupVariadicFormatCalls(RAnalFunction *function, ghidra::Funcdata *func, RCore *core, R2Architecture &arch);

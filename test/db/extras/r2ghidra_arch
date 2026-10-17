@@ -45,6 +45,29 @@ x86:LE:16:Real Mode:
 EOF
 RUN
 
+NAME=nonmatching x86 16-bit call before data retains literal-pool truncation
+FILE=malloc://64
+ARGS=-a x86 -b 16
+CMDS=<<EOF
+wx e8010090c3
+af+ 0 caller
+afb+ 0 0 5
+axd 3 0x20
+a:borland:continuations
+pdgx~<flow type=
+pdgx~call_continuation~?
+pdg~func_
+pdg~?halt_baddata
+EOF
+EXPECT=<<EOF
+{"recognized":false,"continuations":[]}
+    <flow type="callreturn">
+0
+    func_0x00000004();
+0
+EOF
+RUN
+
 NAME=x86_32
 FILE=bins/elf/crackme0x05
 EXPECT=<<EOF
@@ -551,7 +574,7 @@ afc ms
 pdg~MSABI
 EOF2
 EXPECT=<<EOF2
-void MSABI main(int argc,char **argv,char **envp)
+int MSABI main(int argc,char **argv,char **envp)
 EOF2
 RUN
 
@@ -564,7 +587,7 @@ afc swift
 pdg~r2:swift
 EOF2
 EXPECT=<<EOF2
-void r2:swift main(int argc,char **argv,char **envp)
+int r2:swift main(int argc,char **argv,char **envp)
 EOF2
 RUN
 
