@@ -1,3 +1,28 @@
+NAME=unknown and missing native models do not export a numeric coordinate fallback
+FILE=malloc://128
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+wx e83b000000c3
+wx c3 @ 0x1040
+af+ 0x1000 caller
+afb+ 0x1000 0x1000 6
+af+ 0x1040 opaque_effect
+afb+ 0x1040 0x1040 1
+e r2ghidra.lang=x86:LE:32:default:windows
+afc fastcall @ 0x1040
+pdgd~prototype model="__fastcall"
+afc golang @ 0x1040
+pdgd~prototype model="unknown"
+afc cdecl @ 0x1040
+pdgd~prototype model="__cdecl"
+EOF
+EXPECT=<<EOF
+            <prototype model="__fastcall" extrapop="unknown">
+            <prototype model="unknown" extrapop="unknown">
+            <prototype model="__cdecl" extrapop="4">
+EOF
+RUN
+
 NAME=address-linked typed prototype wins over a name match and survives rename
 FILE=malloc://128
 ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0

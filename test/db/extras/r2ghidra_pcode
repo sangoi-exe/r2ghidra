@@ -1,3 +1,33 @@
+NAME=unknown call cleanup retains observable SP dependence while known cleanup remains exact
+FILE=malloc://128
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+wx 29c4e83900000089e0c3
+wx c3 @ 0x1040
+af+ 0x1000 caller
+afb+ 0x1000 0x1000 10
+af+ 0x1040 opaque_effect
+afb+ 0x1040 0x1040 1
+e r2ghidra.lang=x86:LE:32:default:windows
+afc fastcall @ 0x1040
+pdgx~<op code="61">
+pdgx~<iop value=
+pdgx~uniq="0xb"
+pdg~return
+afc cdecl @ 0x1040
+pdgx~<op code="61">
+pdgx~<iop value=
+pdg~return
+EOF
+EXPECT=<<EOF
+      <op code="61">
+        <iop value="0xb"/>
+        <seqnum space="ram" offset="0x1002" uniq="0xb" is_dead="false"/>
+    return puVar1;
+    return &stack0x00000000 + -in_EAX;
+EOF
+RUN
+
 NAME=NE automatic Protected Mode context yields to explicit Real Mode override
 FILE=bins/ne/anim8.exe
 ARGS=-e bin.relocs.apply=true
