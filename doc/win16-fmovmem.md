@@ -6,9 +6,9 @@ The manual helper procedure below is a narrow, explicitly supplied analysis cont
 
 ## Build the matching local components
 
-`subprojects/ghidra-native.wrap` is the single engine URL/revision pin: Meson reads it directly, and `subprojects/ghidra-native.mk` derives its Make settings from it. It selects the `sangoi-exe/ghidra-native` fork at the exact qualified engine commit, not upstream 0.7.2. The current pin is `cd9a067b7ec14bed6f6faaa5192343742bc1953e`, which exists in the local direct-child checkout but has not been published by this work. The previous `8c0a00933c9d19d493c3858799bb3f8d0388f2fa` pin was published and fetched; that does not establish remote availability of the new pin. A fresh network-only build of the current pin is not yet established. Do not replace the pin with an older engine merely to make a remote fetch succeed.
+`subprojects/ghidra-native.wrap` is the single engine URL/revision pin: Meson reads it directly, and `subprojects/ghidra-native.mk` derives its Make settings from it. It selects the `sangoi-exe/ghidra-native` fork at the exact qualified engine commit, not upstream 0.7.2. The current pin is `cd9a067b7ec14bed6f6faaa5192343742bc1953e`. Remote availability of this commit is distinct from validation of a fresh network-only build. A fresh network-only build of the current pin is not yet established. Do not replace the pin with an older engine merely to make a remote fetch succeed.
 
-Until the commit is published, populate a fresh subproject from the matching local direct child. Run this from the r2ghidra repository root, with `./ghidra-native` pointing to that editable engine repository. In a disposable r2ghidra source copy, supply the matching local engine repository at that direct-child path first. The commands refuse an existing subproject path rather than switching or stashing someone else's checkout; use a fresh disposable r2ghidra source copy if that path is already occupied.
+For the qualified local build, populate a fresh subproject from the matching local direct child. Run this from the r2ghidra repository root, with `./ghidra-native` pointing to that editable engine repository. In a disposable r2ghidra source copy, supply the matching local engine repository at that direct-child path first. The commands refuse an existing subproject path rather than switching or stashing someone else's checkout; use a fresh disposable r2ghidra source copy if that path is already occupied.
 
 ```sh
 (
@@ -22,7 +22,7 @@ Until the commit is published, populate a fresh subproject from the matching loc
 )
 ```
 
-Use the existing Meson build with the intended private radare2 on `PATH` and its development package selected by `PKG_CONFIG_PATH`; the normal compiler, Python, Meson/Ninja and zlib development dependencies are required. Create a fresh task-scoped cache build directory and use `--wrap-mode=nodownload` to avoid silently downloading a different dependency while preparing this unpublished local candidate:
+Use the existing Meson build with the intended private radare2 on `PATH` and its development package selected by `PKG_CONFIG_PATH`; the normal compiler, Python, Meson/Ninja and zlib development dependencies are required. Create a fresh task-scoped cache build directory and use `--wrap-mode=nodownload` to avoid silently downloading a different dependency while preparing this matching local build:
 
 ```sh
 pkg-config --modversion r_core
