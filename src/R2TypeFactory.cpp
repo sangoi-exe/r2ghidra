@@ -14,6 +14,9 @@
 #include <climits>
 #include <cstdlib>
 #include <utility>
+#include <algorithm>
+#include <memory>
+#include <numeric>
 
 // Compatibility for older radare2 versions that don't have these type kinds
 #ifndef R_TYPE_BASIC
@@ -383,123 +386,77 @@ Datatype *R2TypeFactory::queryR2Base(const string &n) {
 
 Datatype *R2TypeFactory::queryR2Struct(const string &n, std::set<std::string> &stackTypes) {
 	RCoreLock core(arch->getCore ());
-	Sdb *sdb = core->anal->sdb_types;
-
-	// TODO: We REALLY need an API for this in r2
-	const char *members = sdb_const_get (sdb, ("struct." + n).c_str (), nullptr);
-	if (!members) {
-		const char *alias = sdb_const_get (sdb, ("typedef." + n).c_str (), nullptr);
-		return alias ? queryR2Typedef(n, stackTypes) : nullptr;
+	std::unique_ptr<RAnalBaseType, decltype(&r_anal_base_type_free)> native (r_anal_get_base_type (core->anal, n.c_str ()), r_anal_base_type_free);
+	if (!native) {
+		return nullptr;
 	}
-	struct FieldInfo {
-		std::string name;
-		Datatype *type;
-		int4 offset;
-		FieldInfo() : type(nullptr), offset(0) {}
-	};
-	std::vector<FieldInfo> fieldInfos;
+	if (native->kind != R_ANAL_BASE_TYPE_KIND_STRUCT || native->size % 8 || native->size / 8 > INT_MAX) {
+		return nullptr;
+	}
 	std::vector<TypeField> fields;
-	bool relayout = false;
-	int4 lastOffset = -1;
 	try {
 		TypeStruct *r = getTypeStruct(n);
-		std::stringstream membersStream(members);
-		std::string memberName;
-		while(std::getline(membersStream, memberName, SDB_RS)) {
-			const char *memberContents = sdb_const_get(sdb, ("struct." + n + "." + memberName).c_str(), nullptr);
-			if (!memberContents) {
-				continue;
-			}
-			auto memberTokens = splitSdbArray (memberContents);
-			if (memberTokens.size() < 3) {
-				continue;
-			}
-			auto memberTypeName = memberTokens[0];
-			for (size_t i = 1; i < memberTokens.size () - 2; i++) {
-				memberTypeName += "," + memberTokens[i];
-			}
-			int4 offset = atoi_or(memberTokens[memberTokens.size () - 2], -1);
-			int4 elements = atoi_or(memberTokens[memberTokens.size () - 1], -1);
-			if (offset < 0 || elements < 0) {
-				arch->addWarning ("Failed to parse member metadata for " + memberName + " in struct " + n);
-				continue;
-			}
-			Datatype *memberType = fromCString (memberTypeName, nullptr, &stackTypes);
+		int4 maxAlign = 1;
+		int4 layoutAlign = 0;
+		int4 structSize = 0;
+		RAnalTypeMember *member;
+		R_VEC_FOREACH (r_anal_base_type_members (native.get ()), member) {
+			Datatype *memberType = fromCString (member->type, nullptr, &stackTypes);
 			if (!memberType) {
-				arch->addWarning ("Failed to match type " + memberTypeName + " of member " + memberName + " in struct " + n);
-				continue;
+				arch->addWarning ("Failed to match type " + std::string(member->type) + " of member " + member->name + " in struct " + n);
+				return nullptr;
 			}
 			memberType = code_to_pointer (this, memberType);
-			if (elements > 0) {
-				memberType = getTypeArray (elements, memberType);
+			if (member->count) {
+				const int4 stride = memberType->getAlignSize();
+				if (stride < 1 || member->count > static_cast<size_t>(INT_MAX / stride)) {
+					return nullptr;
+				}
+				memberType = getTypeArray (static_cast<int4>(member->count), memberType);
 			}
-			int4 align = memberType->getAlignment();
-			if (align > 1 && (offset % align) != 0) {
-				relayout = true;
+			if (member->offset > INT_MAX) {
+				return nullptr;
 			}
-			if (lastOffset >= 0 && offset < lastOffset) {
-				relayout = true;
+			const int4 offset = member->offset;
+			if (memberType->getSize() > INT_MAX - offset) {
+				return nullptr;
 			}
-			lastOffset = offset;
-			FieldInfo info;
-			info.name = memberName;
-			info.type = memberType;
-			info.offset = offset;
-			fieldInfos.push_back(info);
+			TypeField tf = {
+				offset, // id = offset by default
+				offset,
+				member->name,
+				memberType
+			};
+			fields.push_back(tf);
+			maxAlign = std::max(maxAlign, memberType->getAlignment());
+			layoutAlign = std::gcd(layoutAlign, offset);
+			structSize = std::max(structSize, offset + memberType->getSize());
 		}
-
-		if (fieldInfos.empty ()) {
+		if (fields.empty ()) {
 			arch->addWarning ("Struct " + n + " has no fields.");
 			return nullptr;
 		}
-		if (relayout) {
-			arch->addWarning ("Struct " + n + " has unaligned offsets; re-layouting fields.");
-			int4 off = 0;
-			for (auto &fi : fieldInfos) {
-				int4 align = fi.type ? fi.type->getAlignment() : 1;
-				if (align <= 0) {
-					align = 1;
-				}
-				int4 rem = off % align;
-				if (rem) {
-					off += (align - rem);
-				}
-				fi.offset = off;
-				if (fi.type) {
-					off += fi.type->getSize();
-				}
+		int4 align = std::gcd(maxAlign, layoutAlign);
+		if (native->size) {
+			const int4 declaredSize = native->size / 8;
+			if (declaredSize < structSize) {
+				arch->addWarning ("Declared size is smaller than fields in struct " + n);
+				return nullptr;
 			}
-		}
-		for (const auto &fi : fieldInfos) {
-			TypeField tf = {
-				fi.offset, // id = offset by default
-				fi.offset,
-				fi.name,
-				fi.type
-			};
-			fields.push_back(tf);
-		}
-		int4 maxAlign = 1;
-		int4 structSize = 0;
-		for (const auto &tf : fields) {
-			if (tf.type) {
-				int4 a = tf.type->getAlignment();
-				if (a > maxAlign) {
-					maxAlign = a;
-				}
-				int4 end = tf.offset + tf.type->getSize();
-				if (end > structSize) {
-					structSize = end;
-				}
-			}
-		}
-		if (maxAlign > 0) {
-			int4 rem = structSize % maxAlign;
+			structSize = declaredSize;
+			align = std::gcd(align, structSize);
+		} else {
+			const int4 rem = structSize % align;
 			if (rem) {
-				structSize += (maxAlign - rem);
+				if (structSize > INT_MAX - (align - rem)) {
+					return nullptr;
+				}
+				structSize += align - rem;
 			}
 		}
-		setFields (fields, {}, r, structSize, maxAlign, 0);
+		// Host offsets and explicit extent constrain analysis alignment, not historical ABI alignment.
+		std::stable_sort(fields.begin(), fields.end(), [](const TypeField &a, const TypeField &b) { return a.offset < b.offset; });
+		setFields (fields, {}, r, structSize, align, 0);
 		return r;
 	} catch (std::invalid_argument &e) {
 		arch->addWarning ("Failed to load struct " + n + " from sdb.");

@@ -3015,3 +3015,131 @@ EXPECT=<<EOF
 void borland_fmovmem_16far far_records(FarAddress16 source,FarAddress16 destination,WORD byte_count)
 EOF
 RUN
+
+NAME=native writer and pointer-compare records retain offsets and counted array strides
+FILE=malloc://64
+ARGS=-a x86 -b 16
+CMDS=<<EOF
+wx c3
+af
+e r2ghidra.lang=x86:LE:16:Real Mode
+tk NearWriterAnalysisState7=struct
+tk struct.NearWriterAnalysisState7=accepted_cf,dx,cx,es
+tk struct.NearWriterAnalysisState7.accepted_cf=bool,0,0
+tk struct.NearWriterAnalysisState7.dx=uint16_t,1,0
+tk struct.NearWriterAnalysisState7.cx=uint16_t,3,0
+tk struct.NearWriterAnalysisState7.es=uint16_t,5,0
+tk type.NearWriterAnalysisState7.size=56
+tk FarPointerCompareAnalysisState9=struct
+tk struct.FarPointerCompareAnalysisState9=equal_zf,ax,dx,bx,cx
+tk struct.FarPointerCompareAnalysisState9.equal_zf=bool,0,0
+tk struct.FarPointerCompareAnalysisState9.ax=uint16_t,1,0
+tk struct.FarPointerCompareAnalysisState9.dx=uint16_t,3,0
+tk struct.FarPointerCompareAnalysisState9.bx=uint16_t,5,0
+tk struct.FarPointerCompareAnalysisState9.cx=uint16_t,7,0
+tk type.FarPointerCompareAnalysisState9.size=72
+tk NativeStateArrays=struct
+tk struct.NativeStateArrays=writers,compares
+tk struct.NativeStateArrays.writers=NearWriterAnalysisState7,0,2
+tk struct.NativeStateArrays.compares=FarPointerCompareAnalysisState9,14,2
+tk type.NativeStateArrays.size=256
+"afs void native_record_arrays(NativeStateArrays *states)"
+pdgd~type name="NearWriterAnalysisState7"~size="7"~alignment="1"~?
+pdgd~type name="FarPointerCompareAnalysisState9"~size="9"~alignment="1"~?
+pdgd~type name="NativeStateArrays"~size="32"~?
+pdgd~field name="accepted_cf" offset="0"~?
+pdgd~field name="equal_zf" offset="0"~?
+pdgd~field name="dx" offset="1"~?
+pdgd~field name="cx" offset="3"~?
+pdgd~field name="es" offset="5"~?
+pdgd~field name="ax" offset="1"~?
+pdgd~field name="dx" offset="3"~?
+pdgd~field name="bx" offset="5"~?
+pdgd~field name="cx" offset="7"~?
+pdgd~metatype="array"~size="14"~arraysize="2"~?
+pdgd~metatype="array"~size="18"~arraysize="2"~?
+EOF
+EXPECT=<<EOF
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+EOF
+RUN
+
+NAME=native declared trailing extent and multidimensional member counts survive typedefs
+FILE=malloc://64
+ARGS=-a x86 -b 64
+CMDS=<<EOF
+wx c3
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+tk PartialTail=struct
+tk struct.PartialTail=tail,head
+tk struct.PartialTail.head=uint32_t,0,0
+tk struct.PartialTail.tail=uint16_t,4,0
+tk type.PartialTail.size=88
+"td typedef PartialTail TailAlias;"
+tk CountedMatrices=struct
+tk struct.CountedMatrices=tails,matrix
+tk struct.CountedMatrices.tails=TailAlias,0,2
+tk struct.CountedMatrices.matrix=uint16_t[2][3],22,2
+tk type.CountedMatrices.size=368
+"afs void counted_matrices(CountedMatrices *records)"
+pdgd~type name="PartialTail"~size="11"~alignment="1"~?
+pdgd~type name="CountedMatrices"~size="46"~?
+pdgd~field name="head" offset="0"~?
+pdgd~field name="tail" offset="4"~?
+pdgd~field name="matrix" offset="22"~?
+pdgd~metatype="array"~size="22"~arraysize="2"~?
+pdgd~metatype="array"~size="24"~arraysize="2"~?
+pdgd~metatype="array"~size="12"~arraysize="2"~?
+pdgd~metatype="array"~size="6"~arraysize="3"~?
+EOF
+EXPECT=<<EOF
+1
+1
+1
+1
+1
+1
+1
+1
+1
+EOF
+RUN
+
+NAME=ordinary C-parser record keeps natural analysis alignment and nested array stride
+FILE=malloc://64
+ARGS=-a x86 -b 64
+CMDS=<<EOF
+wx c3
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"td struct OrdinaryRecord { uint32_t head; uint8_t tail; };"
+tk OrdinaryArrays=struct
+tk struct.OrdinaryArrays=records
+tk struct.OrdinaryArrays.records=OrdinaryRecord,0,2
+"afs void ordinary_arrays(OrdinaryArrays *records)"
+pdgd~type name="OrdinaryRecord"~size="8"~alignment="4"~?
+pdgd~type name="OrdinaryArrays"~size="16"~alignment="4"~?
+pdgd~field name="tail" offset="4"~?
+pdgd~metatype="array"~size="16"~arraysize="2"~?
+EOF
+EXPECT=<<EOF
+1
+1
+1
+1
+EOF
+RUN
