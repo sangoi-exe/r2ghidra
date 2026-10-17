@@ -103,6 +103,38 @@ uint inferred(uint param_1)
 EOF
 RUN
 
+NAME=canonical empty-type variadic marker preserves native prototype and actual call inputs
+FILE=malloc://128
+ARGS=-a x86 -b 64 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+wx bf01000000be34120000ba7856000031c0e82a000000c3
+wx c3 @ 0x1040
+af+ 0x1000 caller
+afb+ 0x1000 0x1000 23
+af+ 0x1040 vfmt
+afb+ 0x1040 0x1040 1
+afc amd64 @ 0x1040
+e r2ghidra.lang=x86:LE:64:default:gcc
+"td int vfmt(int tag, ...);"
+tk func.vfmt.arg.1
+pdgd @ 0x1040~dotdotdot="true"~?
+pdgx @ 0x1000~<op code="7"~?
+pdgx @ 0x1000~^        <addr ref=~?
+pdgx @ 0x1000~space="const"~offset="0x1234"~?
+pdgx @ 0x1000~space="const"~offset="0x5678"~?
+pdg @ 0x1000~vfmt(
+EOF
+EXPECT=<<EOF
+,...
+1
+1
+5
+1
+1
+    vfmt(1,0x1234,0x5678);
+EOF
+RUN
+
 NAME=rawptr
 FILE=bins/dectest32
 EXPECT=<<EOF
@@ -3138,6 +3170,78 @@ pdgd~metatype="array"~size="16"~arraysize="2"~?
 EOF
 EXPECT=<<EOF
 1
+1
+1
+1
+EOF
+RUN
+
+NAME=declared union extent survives aliases and determines native array stride
+FILE=hex://0fb74708c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+tk U=union
+tk union.U=x
+tk union.U.x=uint16_t,0,0
+tk type.U.size=64
+"td typedef U UA;"
+tk UnionArray=struct
+tk struct.UnionArray=values
+tk struct.UnionArray.values=UA,0,2
+tk type.UnionArray.size=128
+"afs uint16_t read_union(U *p)"
+afc amd64
+pdgd~type name="U"~size="8"~metatype="union"~?
+pdgd~field name="x" offset="0"~?
+pdg~return
+"afs uint16_t read_alias(UA *p)"
+afc amd64
+pdgd~def name="UA"~?
+pdgd~type name="U"~size="8"~metatype="union"~?
+pdg~return
+"afs uint16_t read_array(UnionArray *p)"
+afc amd64
+pdgd~type name="UnionArray"~size="16"~?
+pdgd~metatype="array"~size="16"~arraysize="2"~?
+pdg~return
+EOF
+EXPECT=<<EOF
+1
+1
+    return p[1].x;
+1
+1
+    return p[1].x;
+1
+1
+    return p->values[1].x;
+EOF
+RUN
+
+NAME=inconsistent union extent or member offset is rejected visibly
+FILE=hex://0fb74708c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+e r2ghidra.verbose=true
+tk U=union
+tk union.U=x
+tk union.U.x=uint16_t,0,0
+tk type.U.size=8
+"afs uint16_t read_union(U *p)"
+afc amd64
+pdg~Declared size is smaller than fields in union U~?
+tk type.U.size=64
+tk union.U.x=uint16_t,2,0
+pdg~Nonzero offset for member x in union U~?
+tk union.U.x=uint16_t,0,0
+tk type.U.size=63
+pdg~Invalid declared extent for union U~?
+EOF
+EXPECT=<<EOF
 1
 1
 1

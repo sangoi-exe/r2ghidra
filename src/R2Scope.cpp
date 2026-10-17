@@ -435,12 +435,12 @@ static void processFunctionSignature(
 	int4 sig_first_vararg = -1;
 	for (RListIter *it = signature->params->head; it; it = it->n) {
 		auto arg = static_cast<const RAnalFunctionParam *>(it->data);
-		if (R_STR_ISEMPTY (arg->type)) {
-			continue;
-		}
-		if (!strcmp (arg->type, "...") || (arg->name && !strcmp (arg->name, "..."))) {
+		if ((arg->name && !strcmp (arg->name, "...")) || (arg->type && !strcmp (arg->type, "..."))) {
 			sig_first_vararg = sig_args.size ();
 			break;
+		}
+		if (R_STR_ISEMPTY (arg->type)) {
+			continue;
 		}
 		std::string name = R_STR_ISNOTEMPTY (arg->name)? arg->name: "arg" + to_string (sig_args.size ());
 		std::string typeError;

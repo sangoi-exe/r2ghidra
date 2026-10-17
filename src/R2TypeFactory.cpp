@@ -41,16 +41,6 @@ R2TypeFactory::~R2TypeFactory() {
 }
 
 
-std::vector<std::string> splitSdbArray(const std::string& str) {
-	std::stringstream ss (str);
-	std::string token;
-	std::vector<std::string> r;
-	while (std::getline (ss, token, SDB_RS)) {
-		r.push_back (token);
-	}
-	return r;
-}
-
 static type_metatype formatToMeta(const char *fmt) {
 	if (!fmt || !fmt[0]) {
 		return TYPE_UNKNOWN;
@@ -466,82 +456,71 @@ Datatype *R2TypeFactory::queryR2Struct(const string &n, std::set<std::string> &s
 
 Datatype *R2TypeFactory::queryR2Union(const string &n, std::set<std::string> &stackTypes) {
 	RCoreLock core(arch->getCore ());
-	Sdb *sdb = core->anal->sdb_types;
-
-	const char *members = sdb_const_get (sdb, ("union." + n).c_str (), nullptr);
-	std::string prefix = "union.";
-	if (!members) {
-		members = sdb_const_get (sdb, ("struct." + n).c_str (), nullptr);
-		prefix = "struct.";
+	std::unique_ptr<RAnalBaseType, decltype(&r_anal_base_type_free)> native (r_anal_get_base_type (core->anal, n.c_str ()), r_anal_base_type_free);
+	if (!native) {
+		arch->addWarning ("Failed to load union " + n + " from sdb.");
+		return nullptr;
 	}
-	if (!members) {
-		const char *alias = sdb_const_get (sdb, ("typedef." + n).c_str (), nullptr);
-		return alias ? queryR2Typedef(n, stackTypes) : nullptr;
+	if (native->kind != R_ANAL_BASE_TYPE_KIND_UNION || native->size % 8 || native->size / 8 > INT_MAX) {
+		arch->addWarning ("Invalid declared extent for union " + n);
+		return nullptr;
 	}
 	std::vector<TypeField> fields;
 	try {
 		TypeUnion *r = getTypeUnion(n);
-		std::stringstream membersStream(members);
-		std::string memberName;
-		while(std::getline(membersStream, memberName, SDB_RS)) {
-			const char *memberContents = sdb_const_get(sdb, (prefix + n + "." + memberName).c_str(), nullptr);
-			if (!memberContents) {
-				continue;
+		int4 maxAlign = 1;
+		int4 unionSize = 0;
+		RAnalTypeMember *member;
+		R_VEC_FOREACH (r_anal_base_type_members (native.get ()), member) {
+			if (member->offset) {
+				arch->addWarning ("Nonzero offset for member " + std::string(member->name) + " in union " + n);
+				return nullptr;
 			}
-			auto memberTokens = splitSdbArray (memberContents);
-			if (memberTokens.size() < 3) {
-				continue;
-			}
-			auto memberTypeName = memberTokens[0];
-			for (size_t i = 1; i < memberTokens.size () - 2; i++) {
-				memberTypeName += "," + memberTokens[i];
-			}
-			int4 offset = atoi_or(memberTokens[memberTokens.size () - 2], -1);
-			int4 elements = atoi_or(memberTokens[memberTokens.size () - 1], -1);
-			if (offset < 0 || elements < 0) {
-				arch->addWarning ("Failed to parse member metadata for " + memberName + " in union " + n);
-				continue;
-			}
-			Datatype *memberType = fromCString (memberTypeName, nullptr, &stackTypes);
+			Datatype *memberType = fromCString (member->type, nullptr, &stackTypes);
 			if (!memberType) {
-				arch->addWarning ("Failed to match type " + memberTypeName + " of member " + memberName + " in union " + n);
-				continue;
+				arch->addWarning ("Failed to match type " + std::string(member->type) + " of member " + member->name + " in union " + n);
+				return nullptr;
 			}
 			memberType = code_to_pointer (this, memberType);
-			if (elements > 0) {
-				memberType = getTypeArray (elements, memberType);
+			if (member->count) {
+				const int4 stride = memberType->getAlignSize();
+				if (stride < 1 || member->count > static_cast<size_t>(INT_MAX / stride)) {
+					arch->addWarning ("Invalid array extent for member " + std::string(member->name) + " in union " + n);
+					return nullptr;
+				}
+				memberType = getTypeArray (static_cast<int4>(member->count), memberType);
 			}
 			TypeField tf = {
-				(int4)offset,
-				(int4)offset,
-				memberName,
+				0,
+				0,
+				member->name,
 				memberType
 			};
 			fields.push_back(tf);
+			maxAlign = std::max(maxAlign, memberType->getAlignment());
+			unionSize = std::max(unionSize, memberType->getSize());
 		}
 
 		if (fields.empty ()) {
 			arch->addWarning ("Union " + n + " has no fields.");
 			return nullptr;
 		}
-		int4 maxAlign = 1;
-		int4 unionSize = 0;
-		for (const auto &tf : fields) {
-			if (tf.type) {
-				int4 a = tf.type->getAlignment();
-				if (a > maxAlign) {
-					maxAlign = a;
-				}
-				int4 sz = tf.type->getSize();
-				if (sz > unionSize) {
-					unionSize = sz;
-				}
+		if (native->size) {
+			const int4 declaredSize = native->size / 8;
+			if (declaredSize < unionSize) {
+				arch->addWarning ("Declared size is smaller than fields in union " + n);
+				return nullptr;
 			}
-		}
-		if (maxAlign > 0) {
-			int4 rem = unionSize % maxAlign;
+			unionSize = declaredSize;
+			maxAlign = std::gcd(maxAlign, unionSize);
+		} else {
+			const int4 rem = unionSize % maxAlign;
 			if (rem) {
-				unionSize += (maxAlign - rem);
+				if (unionSize > INT_MAX - (maxAlign - rem)) {
+					arch->addWarning ("Union extent exceeds native size limit for " + n);
+					return nullptr;
+				}
+				unionSize += maxAlign - rem;
 			}
 		}
 		setFields (fields, r, unionSize, maxAlign, 0);
