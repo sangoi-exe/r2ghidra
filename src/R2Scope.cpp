@@ -10,6 +10,7 @@
 #include <cctype>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <funcdata.hh>
 
 #include <r_version.h>
@@ -164,32 +165,6 @@ static std::string to_string(const char *str) {
 	return std::string (str ? str : "(null)");
 }
 
-static bool is_structured_type(Datatype *type) {
-	if (!type) {
-		return false;
-	}
-	if (Datatype *td = type->getTypedef()) {
-		return is_structured_type(td);
-	}
-	if (type->isEnumType()) {
-		return true;
-	}
-	switch (type->getMetatype()) {
-	case TYPE_STRUCT:
-	case TYPE_UNION:
-		return true;
-	default:
-		break;
-	}
-	if (auto ptr = dynamic_cast<TypePointer *>(type)) {
-		return is_structured_type(ptr->getPtrTo());
-	}
-	if (auto arr = dynamic_cast<TypeArray *>(type)) {
-		return is_structured_type(arr->getBase());
-	}
-	return false;
-}
-
 struct FunctionVars {
 	RCore *core;
 	R2Architecture *arch;
@@ -200,7 +175,7 @@ struct FunctionVars {
 	ParamActive params;
 	RangeList ranges;
 	std::map<RAnalVar *, Datatype *> types;
-	bool have_arg_vars = false, enabled;
+	bool enabled;
 
 	FunctionVars(RCore *core, R2Architecture *arch, RAnalFunction *fcn, ProtoModel *proto, int4 extraPop, int default_size)
 		: core (core), arch (arch), fcn (fcn), proto (proto), extraPop (extraPop), default_size (default_size),
@@ -285,7 +260,6 @@ struct FunctionVars {
 			if (!var->isarg) {
 				return;
 			}
-			have_arg_vars = true;
 			Address a = addr (var, true);
 			if (a.isInvalid ()) {
 				return;
@@ -430,36 +404,26 @@ struct SigArg {
 	Datatype *type;
 };
 
-static Datatype *resolveFunctionSignatureReturnType(R2Architecture *arch, const char *fcn_name) {
-	Datatype *sig_ret_type = nullptr;
-
-	RCoreLock core_lock (arch->getCore ());
-	Sdb *tdb = core_lock->anal->sdb_types;
-	char *fname = r_type_func_guess (tdb, fcn_name);
-	if (fname && r_type_func_exist (tdb, fname)) {
-		const char *ret_name = r_type_func_ret (tdb, fname);
-		if (R_STR_ISNOTEMPTY (ret_name)) {
-			std::string typeError;
-			sig_ret_type = arch->getTypeFactory ()->fromCString (ret_name, &typeError);
-			if (!sig_ret_type) {
-				arch->addWarning ("Failed to match return type " + to_string (ret_name) + " for function " + to_string (fcn_name) + ": " + typeError);
-			}
-		}
+static Datatype *resolveFunctionSignatureReturnType(R2Architecture *arch, const RAnalFunctionSignature *signature, const char *fcn_name) {
+	if (!signature || R_STR_ISEMPTY (signature->ret_type)) {
+		return nullptr;
 	}
-	free (fname);
-
-	return sig_ret_type;
+	std::string typeError;
+	Datatype *type = arch->getTypeFactory ()->fromCString (signature->ret_type, &typeError);
+	if (!type) {
+		arch->addWarning ("Failed to match return type " + to_string (signature->ret_type) + " for function " + to_string (fcn_name) + ": " + typeError);
+	}
+	return type;
 }
 
-// Helper function to process function signature from radare2's type database
-// and emit parameter symbols to the decompiler
+// Import authoritative typed prototypes; variable-derived signatures remain on FunctionVars.
 static void processFunctionSignature(
 	R2Architecture *arch,
+	const RAnalFunctionSignature *signature,
 	const char *fcn_name,
 	ProtoModel *proto,
 	int default_size,
 	Datatype *sig_ret_type,
-	bool have_arg_vars,
 	Element *symbollistElement,
 	RangeList &varRanges,
 	bool &used_sig_args,
@@ -469,52 +433,25 @@ static void processFunctionSignature(
 {
 	std::vector<SigArg> sig_args;
 	int4 sig_first_vararg = -1;
-	bool explicit_proto = false;
-
-	{
-		RCoreLock core_lock (arch->getCore ());
-		Sdb *tdb = core_lock->anal->sdb_types;
-		char *fname = r_type_func_guess (tdb, fcn_name);
-		if (fname && r_type_func_exist (tdb, fname)) {
-			// a cc key marks an afs-set prototype; auto-inferred and library types have none
-			explicit_proto = sdb_const_get (tdb, ("func." + std::string (fname) + ".cc").c_str (), nullptr) != nullptr;
-			int argc = 0;
-			countargs (tdb, fname, &argc);
-			for (int i = 0; i < argc; i++) {
-				char *arg_type = r_type_func_args_type (tdb, fname, i);
-				if (!arg_type) {
-					continue;
-				}
-				std::string arg_type_str = arg_type;
-				free (arg_type);
-				const char *arg_name = r_type_func_args_name (tdb, fname, i);
-				// the variadic slot is stored as `,...` so the marker lands in the name, not the type
-				if (arg_type_str == "..." || (arg_name && !strcmp (arg_name, "..."))) {
-					sig_first_vararg = i;
-					break;
-				}
-
-				std::string name = (R_STR_ISNOTEMPTY (arg_name))
-					? std::string (arg_name)
-					: ("arg" + to_string (i));
-
-				std::string typeError;
-				Datatype *type = arch->getTypeFactory ()->fromCString (arg_type_str.c_str (), &typeError);
-				if (!type) {
-					arch->addWarning ("Failed to match arg type " + arg_type_str + " for function " + to_string (fcn_name) + ": " + typeError);
-					type = arch->types->getBase (default_size, TYPE_UNKNOWN);
-				}
-				if (type && type->getSize () > 0) {
-					sig_args.push_back ({name, type});
-				}
-			}
+	for (RListIter *it = signature->params->head; it; it = it->n) {
+		auto arg = static_cast<const RAnalFunctionParam *>(it->data);
+		if (R_STR_ISEMPTY (arg->type)) {
+			continue;
 		}
-		free (fname);
-	}
-
-	// a return-only prototype still needs the proto built below so its return type can be locked
-	if (sig_args.empty () && !(sig_ret_type != nullptr && explicit_proto)) {
-		return;
+		if (!strcmp (arg->type, "...") || (arg->name && !strcmp (arg->name, "..."))) {
+			sig_first_vararg = sig_args.size ();
+			break;
+		}
+		std::string name = R_STR_ISNOTEMPTY (arg->name)? arg->name: "arg" + to_string (sig_args.size ());
+		std::string typeError;
+		Datatype *type = arch->getTypeFactory ()->fromCString (arg->type, &typeError);
+		if (!type) {
+			arch->addWarning ("Failed to match arg type " + to_string (arg->type) + " for function " + to_string (fcn_name) + ": " + typeError);
+			type = arch->types->getBase (default_size, TYPE_UNKNOWN);
+		}
+		if (type && type->getSize () > 0) {
+			sig_args.push_back ({name, type});
+		}
 	}
 
 	PrototypePieces protoPieces;
@@ -526,20 +463,8 @@ static void processFunctionSignature(
 		protoPieces.intypes.push_back (arg.type);
 		protoPieces.innames.push_back (arg.name);
 	}
-	bool sig_has_structured = is_structured_type (protoPieces.outtype);
-	if (!sig_has_structured) {
-		for (const auto &arg : sig_args) {
-			if (is_structured_type (arg.type)) {
-				sig_has_structured = true;
-				break;
-			}
-		}
-	}
-	// varargs need the full proto for call-site recovery; an explicit return type must be locked so the decompiler keeps it instead of demoting to void
-	have_sig_proto = sig_has_structured || (sig_first_vararg >= 0) || (sig_ret_type != nullptr && explicit_proto);
-	if (have_sig_proto) {
-		sig_proto = protoPieces;
-	}
+	have_sig_proto = true;
+	sig_proto = protoPieces;
 
 	std::vector<ParameterPieces> pieces;
 	try {
@@ -549,23 +474,8 @@ static void processFunctionSignature(
 		pieces.clear ();
 	}
 
-	bool sig_has_stack = false;
-	for (size_t i = 1; i < pieces.size (); i++) {
-		auto &piece = pieces[i];
-		if (piece.flags & ParameterPieces::hiddenretparm) {
-			continue;
-		}
-		if (piece.addr.isInvalid ()) {
-			continue;
-		}
-		if (piece.addr.getSpace () == arch->translate->getStackSpace ()) {
-			sig_has_stack = true;
-			break;
-		}
-	}
-	if (!pieces.empty () && !(sig_has_stack && have_arg_vars)) {
-		used_sig_args = true;
-	}
+	used_sig_args = !pieces.empty ();
+
 	if (used_sig_args) {
 		size_t sig_index = 0;
 		for (size_t i = 1; i < pieces.size () && sig_index < sig_args.size (); i++) {
@@ -629,18 +539,6 @@ static void markNoReturn(FunctionSymbol *funcsym, bool lockNoArgs) {
 		fp.clearInput ();
 		fp.setInputLock (true);
 	}
-}
-
-static bool noreturnHasNoArgs(RCore *core, RAnalFunction *fcn, const char *fcn_name) {
-	RAnalVar **it;
-	R_VEC_FOREACH (&fcn->vars, it) {
-		RAnalVar *v = *it;
-		// a ppc PLT stub's TOC save lands a spurious stack arg, so only a register arg counts
-		if (v && v->isarg && v->kind == R_ANAL_VAR_KIND_REG) {
-			return false;
-		}
-	}
-	return protoHasNoArgs (core, fcn_name);
 }
 
 FunctionSymbol *R2Scope::registerFunction(RAnalFunction *fcn) const {
@@ -708,11 +606,16 @@ FunctionSymbol *R2Scope::registerFunction(RAnalFunction *fcn) const {
 
 	auto symbollistElement = child(scopeElement, "symbollist");
 
-#define CALLCONV(x) (x)->callconv
-	ProtoModel *proto = CALLCONV(fcn) ? arch->protoModelFromR2CC(CALLCONV(fcn)) : nullptr;
+	std::unique_ptr<RAnalFunctionSignature, decltype(&r_anal_function_signature_free)> signature_owner (r_anal_function_get_signature (fcn), r_anal_function_signature_free);
+	const RAnalFunctionSignature *signature = signature_owner.get ();
+	if (signature && signature->origin != R_ANAL_FUNCTION_SIGNATURE_ORIGIN_ADDRESS && signature->origin != R_ANAL_FUNCTION_SIGNATURE_ORIGIN_NAME) {
+		signature = nullptr;
+	}
+	const char *callconv = fcn->callconv;
+	ProtoModel *proto = callconv? arch->protoModelFromR2CC (callconv): nullptr;
 	if (!proto) {
-		if (CALLCONV(fcn)) {
-			arch->addWarning ("Matching calling convention " + to_string(CALLCONV(fcn)) + " of function " + to_string(fcn_name) + " failed, args may be inaccurate.");
+		if (callconv) {
+			arch->addWarning ("Matching calling convention " + to_string(callconv) + " of function " + to_string(fcn_name) + " failed, args may be inaccurate.");
 		} else {
 			arch->addWarning ("Function " + to_string(fcn_name) + " has no calling convention set, args may be inaccurate.");
 		}
@@ -748,9 +651,9 @@ FunctionSymbol *R2Scope::registerFunction(RAnalFunction *fcn) const {
 	};
 
 #if R2_ABIVERSION >= 50
-	Datatype *sig_ret_type = resolveFunctionSignatureReturnType (arch, fcn_name);
-	if (proto) {
-		processFunctionSignature (arch, fcn_name, proto, default_size, sig_ret_type, vars.have_arg_vars,
+	Datatype *sig_ret_type = resolveFunctionSignatureReturnType (arch, signature, fcn_name);
+	if (proto && signature) {
+		processFunctionSignature (arch, signature, fcn_name, proto, default_size, sig_ret_type,
 			symbollistElement, vars.ranges, used_sig_args, have_sig_proto, sig_proto, childRegRange);
 	}
 #endif
@@ -807,8 +710,8 @@ FunctionSymbol *R2Scope::registerFunction(RAnalFunction *fcn) const {
 			fd->getFuncProto().setPieces(sig_proto);
 		}
 	}
-	if (fcn->is_noreturn) {
-		markNoReturn (funcsym, noreturnHasNoArgs (core, fcn, fcn_name));
+	if (signature? signature->noreturn: fcn->is_noreturn) {
+		markNoReturn (funcsym, have_sig_proto && sig_proto.intypes.empty ());
 	}
 	return funcsym;
 }

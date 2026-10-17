@@ -67,9 +67,19 @@ With the native NE loader and `bin.relocs.apply=true`, this specific SimTower fi
 
 The core's instruction lengths are `1,1,2,1,1,1,3,3,3,3,2,2,2,2,2,1,3,2,1,2,3,3,3,2,2,2,1,2,1,4,2,2,1,1,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1`. The wrapper's are `1,1,2,1,1,3,3,3,3,3,1,3,3,3,3,1,1,1,1,1`. Check native decoding in 16-bit context, the final plain RETF at `0x11140`, and the wrapper's PUSH CS at `0x11156` followed by a near CALL at `0x11157` targeting `0x110e8`. Disassembly/p-code can include internal repeat phases; do not mistake those for additional machine instructions. These addresses are specific to this file, not universal NE virtual addresses.
 
-## Supply the exact host contract
+## Consume automatically qualified host contracts
 
-In a fresh disposable analysis session, define a bounded host function without automatic argument inference, the two-word storage record, and the explicit signature:
+With the matching native host Borland analysis plugin, ordinary `aaa` qualifies both move core/wrapper pairs in the original SimTower input at `0x110e8`/`0x11141` and `0x11294`/`0x112ed`. Qualification, preservation of conflicting analysis and the address-linked typed facts belong to that host plugin, not this bridge. Do not replace those facts with the manual setup below merely to make decompilation succeed.
+
+The bridge consumes the host's canonical structured function signature: address-linked or name-resolved prototypes supply the return type, ordered parameters and noreturn metadata. The function's current operational calling convention still selects the native model; a declaration's stored convention does not override a later explicit `afc` selection. An authoritative complete prototype locks that model through the existing native prototype importer, including an explicit zero-argument prototype. Renaming a function does not invalidate its address-linked contract. Variable-derived signatures remain inference; they do not manufacture a locked declaration.
+
+For the automatically qualified pairs, no `tcc` definition or manual `afs` replacement is required. The core uses `borland_fmovmem_16far`, returns void and takes `source`, `destination`, `byte_count`; the wrapper uses `borland_fmemmove_16far`, returns `FarAddress16` and takes `destination`, `source`, `byte_count`. Inspect the full function/context XML before and after a rename-only operation: the selected model must remain locked, both four-byte records must occupy entry stack offsets 4 and 8, and the two-byte count must occupy offset 12. Incoming SS remains symbolic, not zero or a guessed selector.
+
+This establishes pre-save native consumption only. Legacy project command replay can reject convention names that have no host definition; saved-project restoration and MCP file-switch behavior require separate production-path proof. Do not add fake host conventions to hide that persistence boundary.
+
+## Manual alternative: supply the exact host contract
+
+In a fresh disposable analysis session without an automatically qualified contract, define a bounded host function without automatic argument inference, the two-word storage record, and the explicit signature:
 
 ```text
 af+ 0x110e8 qualified_borland_fmovmem
@@ -91,7 +101,7 @@ pdg
 
 `td` alone is not layout qualification: the inspected host parser placed the second WORD at offset 4. The explicit `tk` member offsets supply the required packed four-byte record through the existing type database. Verify the imported native type is size 4 with size-2 unsigned fields at offsets 0 and 2. `FarAddress16` is an offset/selector storage record, not a native or host pointer.
 
-`afs` can reset the host calling convention, so apply `afc` afterward. `tcc` only registers the name with radare2 so `afc` accepts it; its AX/stack declaration does not define this native ABI or override the explicit void return. The exact native model, not a generated `r2:borland_fmovmem_16far`, must own parameter storage, far-return behavior, and register effects. Do not substitute host BP/SP variable offsets for inspected native storage, or reuse automatic argument variables from an earlier analysis.
+`afs` can reset the host calling convention, so apply `afc` afterward. In this manual alternative only, `tcc` registers the name with radare2 so `afc` accepts it; its AX/stack declaration does not define this native ABI or override the explicit void return. It is not a prerequisite for automatically applied facts. The exact native model, not a generated `r2:borland_fmovmem_16far`, must own parameter storage, far-return behavior, and register effects. Do not substitute host BP/SP variable offsets for inspected native storage, or reuse automatic argument variables from an earlier analysis.
 
 ## Inspect the production result
 
@@ -99,7 +109,7 @@ pdg
 
 Use `pdgx`, the production full native function/p-code XML, to inspect the post-analysis LOAD/STORE address operands and their SS/DS/ES selector plus 16-bit offset dependencies, and correlate retained operations with the original machine-instruction stream through RETF. A host function's size, nonempty C, parameter count, or `pdgj.pcode_ops` opcode list without operands does not establish this. Optimization and repeat lowering can merge or remove operations, so retained operation counts are not instruction counts.
 
-The printed result must not imply a selector-free host-pointer mapping. Unknown incoming DS/SS selectors remain symbolic: this procedure supplies no runtime selector table, no per-address persisted CS/DS/SS database, and no values derived from zero-initialized global registers. The current CS used in NE instruction coordinates is the analysis segment ordinal, not a demonstrated runtime selector. Existing processor defaults such as DF remain intact. The engine keeps real synthesized CALL argument reads dependent on SS, including late prototype reconstruction, while abstract stack placeholders remain offset-only; near offsets wrap at 16 bits before segmentation. The helper's raw selector/offset ordering and modulo-16-bit copy behavior are not unrestricted modern `memmove` semantics. The qualified register contract concerns low-16-bit ordinary intact-frame completion, not upper registers, faults, arbitrary aliases, selector validity, or whole-game correctness. The matching native NE host supplies applied internal/import fixups and distinct ordinal import identities. This procedure does not establish whole-image analysis, automatic helper application, MCP lifecycle/project persistence, or whole-game correctness; those require their own production-path observations.
+The printed result must not imply a selector-free host-pointer mapping. Unknown incoming DS/SS selectors remain symbolic: this procedure supplies no runtime selector table, no per-address persisted CS/DS/SS database, and no values derived from zero-initialized global registers. The current CS used in NE instruction coordinates is the analysis segment ordinal, not a demonstrated runtime selector. Existing processor defaults such as DF remain intact. The engine keeps real synthesized CALL argument reads dependent on SS, including late prototype reconstruction, while abstract stack placeholders remain offset-only; near offsets wrap at 16 bits before segmentation. The helper's raw selector/offset ordering and modulo-16-bit copy behavior are not unrestricted modern `memmove` semantics. The qualified register contract concerns low-16-bit ordinary intact-frame completion, not upper registers, faults, arbitrary aliases, selector validity, or whole-game correctness. The matching native NE host supplies applied internal/import fixups and distinct ordinal import identities. The manual alternative alone does not establish automatic helper application; neither procedure establishes whole-image analysis, MCP lifecycle/project persistence or whole-game correctness. Those require their own production-path observations.
 
 ## Correlate original-image edges
 
