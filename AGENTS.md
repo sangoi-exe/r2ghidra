@@ -2,6 +2,8 @@
 
 This independent repository owns the radare2-to-native-decompiler bridge. Paths and commands below are relative to this root. The [workspace map](../AGENTS.md) describes the host; its C source conventions do not replace this repository's existing C/C++ style. Follow nearby bridge code and the current build definitions.
 
+For commits, follow [the shared prospective attribution rule](../AGENTS.md#shared-prospective-commit-attribution).
+
 ## Source and integration owners
 
 - `src/` owns plugin commands and host integration. Start with `src/R2Architecture.cpp` for native architecture/calling-convention selection, `src/R2TypeFactory.cpp` for host type translation, and `src/R2Scope.cpp` for function prototypes, variables and storage. Keep RE semantics at these code owners or the engine's patch/specification owners rather than duplicating them here.
