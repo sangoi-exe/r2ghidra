@@ -472,6 +472,7 @@ Datatype *R2TypeFactory::queryR2Union(const string &n, std::set<std::string> &st
 		return nullptr;
 	}
 	std::vector<TypeField> fields;
+	std::vector<Datatype *> deferredUnions;
 	try {
 		TypeUnion *r = getTypeUnion(n);
 		int4 maxAlign = 1;
@@ -482,7 +483,8 @@ Datatype *R2TypeFactory::queryR2Union(const string &n, std::set<std::string> &st
 				arch->addWarning ("Nonzero offset for member " + std::string(member->name) + " in union " + n);
 				return nullptr;
 			}
-			Datatype *memberType = fromCString (member->type, nullptr, &stackTypes);
+			Datatype *deferredUnion = nullptr;
+			Datatype *memberType = fromCString (member->type, nullptr, &stackTypes, &deferredUnion);
 			if (!memberType) {
 				arch->addWarning ("Failed to match type " + std::string(member->type) + " of member " + member->name + " in union " + n);
 				return nullptr;
@@ -507,6 +509,9 @@ Datatype *R2TypeFactory::queryR2Union(const string &n, std::set<std::string> &st
 				memberType
 			};
 			fields.push_back(tf);
+			if (deferredUnion) {
+				deferredUnions.push_back (deferredUnion);
+			}
 			maxAlign = std::max(maxAlign, memberType->getAlignment());
 			unionSize = std::max(unionSize, memberType->getSize());
 		}
@@ -534,6 +539,13 @@ Datatype *R2TypeFactory::queryR2Union(const string &n, std::set<std::string> &st
 			}
 		}
 		setFields (fields, r, unionSize, maxAlign, 0);
+		for (Datatype *pointee : deferredUnions) {
+			if (pointee->isIncomplete () && stackTypes.find (pointee->getName ()) == stackTypes.end ()) {
+				if (!queryR2 (pointee->getName (), stackTypes)) {
+					return nullptr;
+				}
+			}
+		}
 		return r;
 	} catch (std::invalid_argument &e) {
 		arch->addWarning ("Failed to load union " + n + " from sdb.");
@@ -713,7 +725,7 @@ Datatype *R2TypeFactory::findByIdResolved(const string &n, uint8 id, int4 sz, st
 	}
 	// re-parsing a name already on the resolution stack would recurse forever
 	const bool revisiting = stackTypes.find (n) != stackTypes.end ();
-	if (r == nullptr) {
+	if (r == nullptr || (r->getMetatype () == TYPE_UNION && r->isIncomplete () && !revisiting)) {
 		r = queryR2 (n, stackTypes);
 	}
 	if (r == nullptr && !revisiting) {
@@ -757,7 +769,7 @@ Datatype *R2TypeFactory::findById(const string &n, uint8 id, int4 sz, std::set<s
 Datatype *R2TypeFactory::findById(const string &n, uint8 id, int4 sz) {
 	checkTypeConstruction ();
 	Datatype *r = TypeFactory::findById (n, id, sz);
-	if (r) {
+	if (r && !(r->getMetatype () == TYPE_UNION && r->isIncomplete ())) {
 		return r;
 	}
 	// the slow path ignores id and only uses sz for the fallback size, so name-keyed memoization is sound for sz <= 0
@@ -776,7 +788,7 @@ Datatype *R2TypeFactory::findById(const string &n, uint8 id, int4 sz) {
 	return r;
 }
 
-Datatype *R2TypeFactory::arrayFromCString(const string &str, string *error, std::set<std::string> *stackTypes) {
+Datatype *R2TypeFactory::arrayFromCString(const string &str, string *error, std::set<std::string> *stackTypes, Datatype **deferredUnion) {
 	const size_t first = str.find('[');
 	std::string base = trim_ws(str.substr(0, first));
 	if (base.empty() || base.find_first_of("()]") != std::string::npos) {
@@ -799,7 +811,7 @@ Datatype *R2TypeFactory::arrayFromCString(const string &str, string *error, std:
 		dimensions.push_back(size);
 		pos = str.find_first_not_of(' ', end + 1);
 	}
-	Datatype *element = fromCString(base, error, stackTypes);
+	Datatype *element = fromCString(base, error, stackTypes, deferredUnion);
 	for (auto it = dimensions.rbegin(); element && it != dimensions.rend(); ++it) {
 		const int4 stride = element->getAlignSize();
 		if (stride < 1 || *it > INT_MAX / stride) {
@@ -811,6 +823,10 @@ Datatype *R2TypeFactory::arrayFromCString(const string &str, string *error, std:
 }
 
 Datatype *R2TypeFactory::fromCString(const string &str, string *error, std::set<std::string> *stackTypes) {
+	return fromCString (str, error, stackTypes, nullptr);
+}
+
+Datatype *R2TypeFactory::fromCString(const string &str, string *error, std::set<std::string> *stackTypes, Datatype **deferredUnion) {
 	checkTypeConstruction ();
 	std::string key = normalize_ws (trim_ws (str));
 	if (key.empty ()) {
@@ -825,7 +841,7 @@ Datatype *R2TypeFactory::fromCString(const string &str, string *error, std::set<
 		return entry.type;
 	}
 	if (key.find('[') != std::string::npos) {
-		Datatype *array = arrayFromCString(key, error, stackTypes);
+		Datatype *array = arrayFromCString(key, error, stackTypes, deferredUnion);
 		if (!array && error) {
 			*error = "Invalid or oversized array type";
 		}
@@ -885,7 +901,22 @@ Datatype *R2TypeFactory::fromCString(const string &str, string *error, std::set<
 		if (manual == "void") {
 			base = getTypeVoid();
 		} else {
-			base = findByName(manual, *stack);
+			if (deferredUnion && ptr_depth > 0) {
+				RCoreLock core (arch->getCore ());
+				if (r_type_kind (core->anal->sdb_types, manual.c_str ()) == R_TYPE_UNION) {
+					// Pointer layout does not require its union pointee to be complete yet.
+					base = TypeFactory::findById (manual, 0, 0);
+					if (!base) {
+						base = getTypeUnion (manual);
+					}
+					if (base->isIncomplete ()) {
+						*deferredUnion = base;
+					}
+				}
+			}
+			if (!base) {
+				base = findByName(manual, *stack);
+			}
 			if (!base) {
 				base = queryR2(manual, *stack);
 			}

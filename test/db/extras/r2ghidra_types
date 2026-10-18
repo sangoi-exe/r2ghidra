@@ -3319,3 +3319,63 @@ uint64_t read_node(Node *p)
     return p->value;
 EOF
 RUN
+
+NAME=pointer-broken mutual union recursion completes in either root order
+FILE=hex://488b07c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+tk B=union
+tk union.B=a,value
+tk union.B.a=A,0,0
+tk union.B.value=uint64_t,0,0
+tk type.B.size=64
+tk A=union
+tk union.A=p
+tk union.A.p=B *,0,0
+tk type.A.size=64
+"afs uint64_t read_a(A *p)"
+afc amd64
+pdgd~:2..19
+"afs uint64_t read_b(B *p)"
+afc amd64
+pdgd~:2..19
+EOF
+EXPECT=<<EOF
+  <typegrp>
+    <type name="A" id="0xc000000000007b41" size="8" metatype="union" alignment="8">
+      <field name="p" offset="0">
+        <type name="" size="8" metatype="ptr">
+          <typeref name="B" id="0xc0000000feab85e9"/>
+        </type>
+      </field>
+    </type>
+    <type name="B" id="0xc0000000feab85e9" size="8" metatype="union" alignment="8">
+      <field name="a" offset="0">
+        <typeref name="A" id="0xc000000000007b41"/>
+      </field>
+      <field name="value" offset="0">
+        <typeref name="uint64_t" id="0xe0c26e8a639f5ff9"/>
+      </field>
+    </type>
+  </typegrp>
+  <typegrp>
+    <type name="A" id="0xc000000000007b41" size="8" metatype="union" alignment="8">
+      <field name="p" offset="0">
+        <type name="" size="8" metatype="ptr">
+          <typeref name="B" id="0xc0000000feab85e9"/>
+        </type>
+      </field>
+    </type>
+    <type name="B" id="0xc0000000feab85e9" size="8" metatype="union" alignment="8">
+      <field name="a" offset="0">
+        <typeref name="A" id="0xc000000000007b41"/>
+      </field>
+      <field name="value" offset="0">
+        <typeref name="uint64_t" id="0xe0c26e8a639f5ff9"/>
+      </field>
+    </type>
+  </typegrp>
+EOF
+RUN
