@@ -25,18 +25,26 @@ private:
 	std::unordered_map<std::string, Datatype *> lookupCache;
 	std::string typeConstructionError;
 
-	void checkTypeConstruction() const;
+	struct TypeResolution {
+		std::set<std::string> &stackTypes;
+		std::vector<Datatype *> pendingUnions;
+	};
 
-	Datatype *queryR2Struct(const string &n, std::set<std::string> &stackTypes);
-	Datatype *queryR2Union(const string &n, std::set<std::string> &stackTypes);
+	void checkTypeConstruction() const;
+	[[noreturn]] void failTypeConstruction(const string &error);
+	void completeResolution(TypeResolution &resolution);
+
+	Datatype *queryR2Struct(const string &n, TypeResolution &resolution);
+	Datatype *queryR2Union(const string &n, TypeResolution &resolution);
 	Datatype *queryR2Base(const string &n);
-	Datatype *queryR2Enum(const string &n, std::set<std::string> &stackTypes);
-	Datatype *queryR2Typedef(const string &n, std::set<std::string> &stackTypes);
-	Datatype *queryR2Function(const string &n, std::set<std::string> &stackTypes);
-	Datatype *queryR2(const string &n, std::set<std::string> &stackTypes);
-	Datatype *fromCString(const string &str, string *error, std::set<std::string> *stackTypes, Datatype **deferredUnion);
-	Datatype *arrayFromCString(const string &str, string *error, std::set<std::string> *stackTypes, Datatype **deferredUnion);
-	Datatype *findByIdResolved(const string &n, uint8 id, int4 sz, std::set<std::string> &stackTypes, Datatype *r, bool resolvedBase);
+	Datatype *queryR2Enum(const string &n, TypeResolution &resolution);
+	Datatype *queryR2Typedef(const string &n, TypeResolution &resolution);
+	Datatype *queryR2Function(const string &n, TypeResolution &resolution);
+	Datatype *queryR2(const string &n, TypeResolution &resolution);
+	Datatype *fromCStringResolved(const string &str, string *error, TypeResolution &resolution);
+	Datatype *arrayFromCString(const string &str, string *error, TypeResolution &resolution);
+	Datatype *findByIdResolved(const string &n, uint8 id, int4 sz, TypeResolution &resolution, Datatype *r, bool resolvedBase);
+	Datatype *findByName(const string &n, TypeResolution &resolution) { return findByIdResolved(n, 0, 0, resolution, nullptr, false); }
 
 protected:
 	Datatype *findById(const string &n, uint8 id, int4 sz, std::set<std::string> &stackTypes);

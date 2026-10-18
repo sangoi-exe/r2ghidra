@@ -3379,3 +3379,143 @@ EXPECT=<<EOF
   </typegrp>
 EOF
 RUN
+
+NAME=union pointer completion waits for outer by-value layouts in either root order
+FILE=hex://488b07c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+tk A=union
+tk union.A=b
+tk union.A.b=B,0,0
+tk type.A.size=64
+tk B=union
+tk union.B=p
+tk union.B.p=C *,0,0
+tk type.B.size=64
+tk C=union
+tk union.C=a,value
+tk union.C.a=A,0,0
+tk union.C.value=uint64_t,0,0
+tk type.C.size=64
+"afs uint64_t read_a(A *p)"
+afc amd64
+pdgd~:2..24
+"afs uint64_t read_c(C *p)"
+afc amd64
+pdgd~:2..24
+EOF
+EXPECT=<<EOF
+  <typegrp>
+    <type name="B" id="0xc0000000feab85e9" size="8" metatype="union" alignment="8">
+      <field name="p" offset="0">
+        <type name="" size="8" metatype="ptr">
+          <typeref name="C" id="0xc000000000007b43"/>
+        </type>
+      </field>
+    </type>
+    <type name="A" id="0xc000000000007b41" size="8" metatype="union" alignment="8">
+      <field name="b" offset="0">
+        <typeref name="B" id="0xc0000000feab85e9"/>
+      </field>
+    </type>
+    <type name="C" id="0xc000000000007b43" size="8" metatype="union" alignment="8">
+      <field name="a" offset="0">
+        <typeref name="A" id="0xc000000000007b41"/>
+      </field>
+      <field name="value" offset="0">
+        <typeref name="uint64_t" id="0xe0c26e8a639f5ff9"/>
+      </field>
+    </type>
+  </typegrp>
+  <typegrp>
+    <type name="B" id="0xc0000000feab85e9" size="8" metatype="union" alignment="8">
+      <field name="p" offset="0">
+        <type name="" size="8" metatype="ptr">
+          <typeref name="C" id="0xc000000000007b43"/>
+        </type>
+      </field>
+    </type>
+    <type name="A" id="0xc000000000007b41" size="8" metatype="union" alignment="8">
+      <field name="b" offset="0">
+        <typeref name="B" id="0xc0000000feab85e9"/>
+      </field>
+    </type>
+    <type name="C" id="0xc000000000007b43" size="8" metatype="union" alignment="8">
+      <field name="a" offset="0">
+        <typeref name="A" id="0xc000000000007b41"/>
+      </field>
+      <field name="value" offset="0">
+        <typeref name="uint64_t" id="0xe0c26e8a639f5ff9"/>
+      </field>
+    </type>
+  </typegrp>
+EOF
+RUN
+
+NAME=typedef pointer completion shares the union resolution in either root order
+FILE=hex://488b07488b00c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+tk B=union
+tk union.B=a,value
+tk union.B.a=A,0,0
+tk union.B.value=uint64_t,0,0
+tk type.B.size=64
+tk A=union
+tk union.A=p
+tk union.A.p=BP,0,0
+tk type.A.size=64
+tk BP=typedef
+tk typedef.BP=B *
+"afs uint64_t read_a(A *p)"
+afc amd64
+pdgd~:2..20
+pdg~return
+"afs uint64_t read_b(B *p)"
+afc amd64
+pdgd~:2..20
+EOF
+EXPECT=<<EOF
+  <typegrp>
+    <def name="BP" id="0xc00000fe552e17fb">
+      <typeref name="" id="0xc00000000000007b"/>
+    </def>
+    <type name="A" id="0xc000000000007b41" size="8" metatype="union" alignment="8">
+      <field name="p" offset="0">
+        <typeref name="BP" id="0xc00000fe552e17fb"/>
+      </field>
+    </type>
+    <type name="B" id="0xc0000000feab85e9" size="8" metatype="union" alignment="8">
+      <field name="a" offset="0">
+        <typeref name="A" id="0xc000000000007b41"/>
+      </field>
+      <field name="value" offset="0">
+        <typeref name="uint64_t" id="0xe0c26e8a639f5ff9"/>
+      </field>
+    </type>
+  </typegrp>
+    return p->p->value;
+  <typegrp>
+    <def name="BP" id="0xc00000fe552e17fb">
+      <typeref name="" id="0xc00000000000007b"/>
+    </def>
+    <type name="A" id="0xc000000000007b41" size="8" metatype="union" alignment="8">
+      <field name="p" offset="0">
+        <typeref name="BP" id="0xc00000fe552e17fb"/>
+      </field>
+    </type>
+    <type name="B" id="0xc0000000feab85e9" size="8" metatype="union" alignment="8">
+      <field name="a" offset="0">
+        <typeref name="A" id="0xc000000000007b41"/>
+      </field>
+      <field name="value" offset="0">
+        <typeref name="uint64_t" id="0xe0c26e8a639f5ff9"/>
+      </field>
+    </type>
+  </typegrp>
+EOF
+RUN

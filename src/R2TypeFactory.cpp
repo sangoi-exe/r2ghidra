@@ -46,6 +46,26 @@ void R2TypeFactory::checkTypeConstruction() const {
 	}
 }
 
+void R2TypeFactory::failTypeConstruction(const string &error) {
+	if (typeConstructionError.empty ()) {
+		typeConstructionError = error;
+	}
+	throw LowlevelError (typeConstructionError);
+}
+
+void R2TypeFactory::completeResolution(TypeResolution &resolution) {
+	// Drain only at the outward boundary; containing by-value layouts are complete here.
+	for (size_t i = 0; i < resolution.pendingUnions.size (); i++) {
+		Datatype *pointee = resolution.pendingUnions[i];
+		if (pointee->isIncomplete ()) {
+			Datatype *type = queryR2 (pointee->getName (), resolution);
+			if (!type || type->isIncomplete ()) {
+				failTypeConstruction ("Failed to construct complete union " + pointee->getName ());
+			}
+		}
+	}
+}
+
 
 static type_metatype formatToMeta(const char *fmt) {
 	if (!fmt || !fmt[0]) {
@@ -380,7 +400,7 @@ Datatype *R2TypeFactory::queryR2Base(const string &n) {
 	return make_typedef(this, base, n);
 }
 
-Datatype *R2TypeFactory::queryR2Struct(const string &n, std::set<std::string> &stackTypes) {
+Datatype *R2TypeFactory::queryR2Struct(const string &n, TypeResolution &resolution) {
 	RCoreLock core(arch->getCore ());
 	std::unique_ptr<RAnalBaseType, decltype(&r_anal_base_type_free)> native (r_anal_get_base_type (core->anal, n.c_str ()), r_anal_base_type_free);
 	if (!native) {
@@ -397,7 +417,7 @@ Datatype *R2TypeFactory::queryR2Struct(const string &n, std::set<std::string> &s
 		int4 structSize = 0;
 		RAnalTypeMember *member;
 		R_VEC_FOREACH (r_anal_base_type_members (native.get ()), member) {
-			Datatype *memberType = fromCString (member->type, nullptr, &stackTypes);
+			Datatype *memberType = fromCStringResolved (member->type, nullptr, resolution);
 			if (!memberType) {
 				arch->addWarning ("Failed to match type " + std::string(member->type) + " of member " + member->name + " in struct " + n);
 				return nullptr;
@@ -460,7 +480,7 @@ Datatype *R2TypeFactory::queryR2Struct(const string &n, std::set<std::string> &s
 	}
 }
 
-Datatype *R2TypeFactory::queryR2Union(const string &n, std::set<std::string> &stackTypes) {
+Datatype *R2TypeFactory::queryR2Union(const string &n, TypeResolution &resolution) {
 	RCoreLock core(arch->getCore ());
 	std::unique_ptr<RAnalBaseType, decltype(&r_anal_base_type_free)> native (r_anal_get_base_type (core->anal, n.c_str ()), r_anal_base_type_free);
 	if (!native) {
@@ -472,7 +492,6 @@ Datatype *R2TypeFactory::queryR2Union(const string &n, std::set<std::string> &st
 		return nullptr;
 	}
 	std::vector<TypeField> fields;
-	std::vector<Datatype *> deferredUnions;
 	try {
 		TypeUnion *r = getTypeUnion(n);
 		int4 maxAlign = 1;
@@ -483,8 +502,7 @@ Datatype *R2TypeFactory::queryR2Union(const string &n, std::set<std::string> &st
 				arch->addWarning ("Nonzero offset for member " + std::string(member->name) + " in union " + n);
 				return nullptr;
 			}
-			Datatype *deferredUnion = nullptr;
-			Datatype *memberType = fromCString (member->type, nullptr, &stackTypes, &deferredUnion);
+			Datatype *memberType = fromCStringResolved (member->type, nullptr, resolution);
 			if (!memberType) {
 				arch->addWarning ("Failed to match type " + std::string(member->type) + " of member " + member->name + " in union " + n);
 				return nullptr;
@@ -509,9 +527,6 @@ Datatype *R2TypeFactory::queryR2Union(const string &n, std::set<std::string> &st
 				memberType
 			};
 			fields.push_back(tf);
-			if (deferredUnion) {
-				deferredUnions.push_back (deferredUnion);
-			}
 			maxAlign = std::max(maxAlign, memberType->getAlignment());
 			unionSize = std::max(unionSize, memberType->getSize());
 		}
@@ -539,13 +554,6 @@ Datatype *R2TypeFactory::queryR2Union(const string &n, std::set<std::string> &st
 			}
 		}
 		setFields (fields, r, unionSize, maxAlign, 0);
-		for (Datatype *pointee : deferredUnions) {
-			if (pointee->isIncomplete () && stackTypes.find (pointee->getName ()) == stackTypes.end ()) {
-				if (!queryR2 (pointee->getName (), stackTypes)) {
-					return nullptr;
-				}
-			}
-		}
 		return r;
 	} catch (std::invalid_argument &e) {
 		arch->addWarning ("Failed to load union " + n + " from sdb.");
@@ -553,13 +561,13 @@ Datatype *R2TypeFactory::queryR2Union(const string &n, std::set<std::string> &st
 	}
 }
 
-Datatype *R2TypeFactory::queryR2Enum(const string &n, std::set<std::string> &stackTypes) {
+Datatype *R2TypeFactory::queryR2Enum(const string &n, TypeResolution &resolution) {
 	RCoreLock core (arch->getCore ());
 	RList *members = r_type_get_enum (core->anal->sdb_types, n.c_str ());
 	if (!members) {
 		Sdb *sdb = core->anal->sdb_types;
 		const char *alias = sdb_const_get (sdb, ("typedef." + n).c_str (), nullptr);
-		return alias ? queryR2Typedef(n, stackTypes) : nullptr;
+		return alias ? queryR2Typedef(n, resolution) : nullptr;
 	}
 
 	std::vector<std::string> namelist;
@@ -592,7 +600,7 @@ Datatype *R2TypeFactory::queryR2Enum(const string &n, std::set<std::string> &sta
 	}
 }
 
-Datatype *R2TypeFactory::queryR2Function(const string &n, std::set<std::string> &stackTypes) {
+Datatype *R2TypeFactory::queryR2Function(const string &n, TypeResolution &resolution) {
 	RCoreLock core(arch->getCore());
 	Sdb *sdb = core->anal->sdb_types;
 
@@ -610,7 +618,7 @@ Datatype *R2TypeFactory::queryR2Function(const string &n, std::set<std::string> 
 	proto.model = arch->defaultfp;
 	proto.name = n;
 	proto.firstVarArgSlot = -1;
-	proto.outtype = ret ? fromCString(ret, nullptr, &stackTypes) : getTypeVoid();
+	proto.outtype = ret ? fromCStringResolved(ret, nullptr, resolution) : getTypeVoid();
 	if (!proto.outtype) {
 		proto.outtype = getTypeVoid();
 	}
@@ -627,7 +635,7 @@ Datatype *R2TypeFactory::queryR2Function(const string &n, std::set<std::string> 
 
 		Datatype *arg = nullptr;
 		if (arg_type && *arg_type) {
-			arg = fromCString(arg_type, nullptr, &stackTypes);
+			arg = fromCStringResolved(arg_type, nullptr, resolution);
 		}
 		if (!arg) {
 			arg = getBase(1, TYPE_UNKNOWN);
@@ -643,7 +651,7 @@ Datatype *R2TypeFactory::queryR2Function(const string &n, std::set<std::string> 
 	return getTypeCode(proto);
 }
 
-Datatype *R2TypeFactory::queryR2Typedef(const string &n, std::set<std::string> &stackTypes) {
+Datatype *R2TypeFactory::queryR2Typedef(const string &n, TypeResolution &resolution) {
 	RCoreLock core(arch->getCore());
 	Sdb *sdb = core->anal->sdb_types;
 	const char *target = sdb_const_get (sdb, ("typedef." + n).c_str (), nullptr);
@@ -652,7 +660,7 @@ Datatype *R2TypeFactory::queryR2Typedef(const string &n, std::set<std::string> &
 	}
 	if (r_str_startswith(target, "func.")) {
 		std::string func_name = target + strlen("func.");
-		Datatype *resolved = queryR2Function(func_name, stackTypes);
+		Datatype *resolved = queryR2Function(func_name, resolution);
 		if (!resolved) {
 			return nullptr;
 		}
@@ -661,7 +669,7 @@ Datatype *R2TypeFactory::queryR2Typedef(const string &n, std::set<std::string> &
 		setName (resolved, resolved->getName()); // add the old name back
 		return typedefd;
 	}
-	Datatype *resolved = fromCString (target, nullptr, &stackTypes);
+	Datatype *resolved = fromCStringResolved (target, nullptr, resolution);
 	if (!resolved) {
 		return nullptr;
 	}
@@ -671,15 +679,15 @@ Datatype *R2TypeFactory::queryR2Typedef(const string &n, std::set<std::string> &
 	return typedefd;
 }
 
-Datatype *R2TypeFactory::queryR2(const string &n, std::set<std::string> &stackTypes) {
+Datatype *R2TypeFactory::queryR2(const string &n, TypeResolution &resolution) {
 	if (n.empty()) {
 		return nullptr;
 	}
-	if (stackTypes.find (n) != stackTypes.end ()) {
+	if (resolution.stackTypes.find (n) != resolution.stackTypes.end ()) {
 		arch->addWarning("Recursion detected while creating type " + n);
 		return nullptr;
 	}
-	stackTypes.insert (n);
+	resolution.stackTypes.insert (n);
 
 	RCoreLock core (arch->getCore ());
 	int kind = r_type_kind (core->anal->sdb_types, n.c_str ());
@@ -687,34 +695,31 @@ Datatype *R2TypeFactory::queryR2(const string &n, std::set<std::string> &stackTy
 	case R_TYPE_BASIC:
 		return queryR2Base(n);
 	case R_TYPE_STRUCT:
-		return queryR2Struct (n, stackTypes);
+		return queryR2Struct (n, resolution);
 	case R_TYPE_UNION: {
 		try {
-			Datatype *type = queryR2Union (n, stackTypes);
+			Datatype *type = queryR2Union (n, resolution);
 			if (!type || type->isIncomplete ()) {
 				throw LowlevelError ("Failed to construct complete union " + n);
 			}
 			return type;
 		} catch (const LowlevelError &error) {
 			// Recursive dependents retain the identity; keep ownership but refuse further resolution.
-			if (typeConstructionError.empty ()) {
-				typeConstructionError = error.explain;
-			}
-			throw;
+			failTypeConstruction (error.explain);
 		}
 	}
 	case R_TYPE_ENUM:
-		return queryR2Enum (n, stackTypes);
+		return queryR2Enum (n, resolution);
 	case R_TYPE_TYPEDEF:
-		return queryR2Typedef (n, stackTypes);
+		return queryR2Typedef (n, resolution);
 	case R_TYPE_FUNCTION:
-		return queryR2Function (n, stackTypes);
+		return queryR2Function (n, resolution);
 	default:
 		return nullptr;
 	}
 }
 
-Datatype *R2TypeFactory::findByIdResolved(const string &n, uint8 id, int4 sz, std::set<std::string> &stackTypes, Datatype *r, bool resolvedBase) {
+Datatype *R2TypeFactory::findByIdResolved(const string &n, uint8 id, int4 sz, TypeResolution &resolution, Datatype *r, bool resolvedBase) {
 	// resolve basic types
 	if (!resolvedBase) {
 		r = TypeFactory::findById (n, id, sz);
@@ -724,9 +729,9 @@ Datatype *R2TypeFactory::findByIdResolved(const string &n, uint8 id, int4 sz, st
 		return getBase(fallback_size, TYPE_UNKNOWN);
 	}
 	// re-parsing a name already on the resolution stack would recurse forever
-	const bool revisiting = stackTypes.find (n) != stackTypes.end ();
+	const bool revisiting = resolution.stackTypes.find (n) != resolution.stackTypes.end ();
 	if (r == nullptr || (r->getMetatype () == TYPE_UNION && r->isIncomplete () && !revisiting)) {
-		r = queryR2 (n, stackTypes);
+		r = queryR2 (n, resolution);
 	}
 	if (r == nullptr && !revisiting) {
 		const bool needs_parse =
@@ -738,7 +743,7 @@ Datatype *R2TypeFactory::findByIdResolved(const string &n, uint8 id, int4 sz, st
 			n.rfind("union ", 0) == 0 ||
 			n.rfind("func.", 0) == 0;
 		if (needs_parse) {
-			r = fromCString (n, nullptr, &stackTypes);
+			r = fromCStringResolved (n, nullptr, resolution);
 		}
 	}
 	if (r == nullptr) {
@@ -762,7 +767,10 @@ Datatype *R2TypeFactory::findByIdResolved(const string &n, uint8 id, int4 sz, st
 
 Datatype *R2TypeFactory::findById(const string &n, uint8 id, int4 sz, std::set<std::string> &stackTypes) {
 	checkTypeConstruction ();
-	return findByIdResolved (n, id, sz, stackTypes, nullptr, false);
+	TypeResolution resolution{ stackTypes, {} };
+	Datatype *type = findByIdResolved (n, id, sz, resolution, nullptr, false);
+	completeResolution (resolution);
+	return type;
 }
 
 // overriden call
@@ -781,14 +789,16 @@ Datatype *R2TypeFactory::findById(const string &n, uint8 id, int4 sz) {
 		}
 	}
 	std::set<std::string> stackTypes; // to detect recursion
-	r = findByIdResolved (n, id, sz, stackTypes, r, true);
+	TypeResolution resolution{ stackTypes, {} };
+	r = findByIdResolved (n, id, sz, resolution, r, true);
+	completeResolution (resolution);
 	if (cacheable) {
 		lookupCache[n] = r;
 	}
 	return r;
 }
 
-Datatype *R2TypeFactory::arrayFromCString(const string &str, string *error, std::set<std::string> *stackTypes, Datatype **deferredUnion) {
+Datatype *R2TypeFactory::arrayFromCString(const string &str, string *error, TypeResolution &resolution) {
 	const size_t first = str.find('[');
 	std::string base = trim_ws(str.substr(0, first));
 	if (base.empty() || base.find_first_of("()]") != std::string::npos) {
@@ -811,7 +821,7 @@ Datatype *R2TypeFactory::arrayFromCString(const string &str, string *error, std:
 		dimensions.push_back(size);
 		pos = str.find_first_not_of(' ', end + 1);
 	}
-	Datatype *element = fromCString(base, error, stackTypes, deferredUnion);
+	Datatype *element = fromCStringResolved(base, error, resolution);
 	for (auto it = dimensions.rbegin(); element && it != dimensions.rend(); ++it) {
 		const int4 stride = element->getAlignSize();
 		if (stride < 1 || *it > INT_MAX / stride) {
@@ -823,10 +833,24 @@ Datatype *R2TypeFactory::arrayFromCString(const string &str, string *error, std:
 }
 
 Datatype *R2TypeFactory::fromCString(const string &str, string *error, std::set<std::string> *stackTypes) {
-	return fromCString (str, error, stackTypes, nullptr);
+	checkTypeConstruction ();
+	const bool toplevel = !stackTypes || stackTypes->empty ();
+	std::set<std::string> localStack;
+	TypeResolution resolution{ stackTypes ? *stackTypes : localStack, {} };
+	std::string parseError;
+	Datatype *type = fromCStringResolved (str, &parseError, resolution);
+	completeResolution (resolution);
+	std::string key = normalize_ws (trim_ws (str));
+	if (toplevel && !key.empty () && key.find ('[') == std::string::npos) {
+		cstringCache.insert_or_assign (std::move(key), CStringCacheEntry{ type, parseError });
+	}
+	if (error && !type) {
+		*error = parseError;
+	}
+	return type;
 }
 
-Datatype *R2TypeFactory::fromCString(const string &str, string *error, std::set<std::string> *stackTypes, Datatype **deferredUnion) {
+Datatype *R2TypeFactory::fromCStringResolved(const string &str, string *error, TypeResolution &resolution) {
 	checkTypeConstruction ();
 	std::string key = normalize_ws (trim_ws (str));
 	if (key.empty ()) {
@@ -841,23 +865,19 @@ Datatype *R2TypeFactory::fromCString(const string &str, string *error, std::set<
 		return entry.type;
 	}
 	if (key.find('[') != std::string::npos) {
-		Datatype *array = arrayFromCString(key, error, stackTypes, deferredUnion);
+		Datatype *array = arrayFromCString(key, error, resolution);
 		if (!array && error) {
 			*error = "Invalid or oversized array type";
 		}
 		return array;
 	}
-	// results computed mid-recursion may be truncated by the recursion guard, so only cache full resolutions
-	const bool toplevel = !stackTypes || stackTypes->empty ();
-	CStringCacheEntry entry{ nullptr, {} };
+	std::string parseError;
 	Datatype *r = nullptr;
-	std::set<std::string> localStack;
-	std::set<std::string> *stack = stackTypes ? stackTypes : &localStack;
 	const std::string &type_str = key;
 
 	if (r_str_startswith(type_str.c_str(), "func.")) {
 		std::string func_name = type_str.substr(strlen("func."));
-		r = queryR2Function(func_name, *stack);
+		r = queryR2Function(func_name, resolution);
 	}
 
 	if (!r) {
@@ -901,7 +921,7 @@ Datatype *R2TypeFactory::fromCString(const string &str, string *error, std::set<
 		if (manual == "void") {
 			base = getTypeVoid();
 		} else {
-			if (deferredUnion && ptr_depth > 0) {
+			if (ptr_depth > 0) {
 				RCoreLock core (arch->getCore ());
 				if (r_type_kind (core->anal->sdb_types, manual.c_str ()) == R_TYPE_UNION) {
 					// Pointer layout does not require its union pointee to be complete yet.
@@ -910,15 +930,15 @@ Datatype *R2TypeFactory::fromCString(const string &str, string *error, std::set<
 						base = getTypeUnion (manual);
 					}
 					if (base->isIncomplete ()) {
-						*deferredUnion = base;
+						resolution.pendingUnions.push_back (base);
 					}
 				}
 			}
 			if (!base) {
-				base = findByName(manual, *stack);
+				base = findByName(manual, resolution);
 			}
 			if (!base) {
-				base = queryR2(manual, *stack);
+				base = queryR2(manual, resolution);
 			}
 			if (!base) {
 				BuiltinTypeSpec builtin;
@@ -952,29 +972,23 @@ Datatype *R2TypeFactory::fromCString(const string &str, string *error, std::set<
 						free(out);
 					}
 					if (error_cstr) {
-						entry.error = error_cstr;
+						parseError = error_cstr;
 						free(error_cstr);
 					}
 				}
 			}
-			r = queryR2(tmp_name, *stack);
+			r = queryR2(tmp_name, resolution);
 #endif
-			if (!r && entry.error.empty()) {
-				entry.error = "Unknown type identifier " + manual;
+			if (!r && parseError.empty()) {
+				parseError = "Unknown type identifier " + manual;
 			}
 		}
 	}
 
-	entry.type = r;
-	const CStringCacheEntry *result = &entry;
-	if (toplevel) {
-		auto cached = cstringCache.insert_or_assign(std::move(key), std::move(entry));
-		result = &cached.first->second;
+	if (error && !r) {
+		*error = parseError;
 	}
-	if (error && !result->type) {
-		*error = result->error;
-	}
-	return result->type;
+	return r;
 }
 
 // reverse of fromCString: render a Datatype as an r2-parseable C type string, "" = not expressible
