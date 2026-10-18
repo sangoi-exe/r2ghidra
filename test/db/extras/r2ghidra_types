@@ -3220,30 +3220,102 @@ EXPECT=<<EOF
 EOF
 RUN
 
-NAME=inconsistent union extent or member offset is rejected visibly
-FILE=hex://0fb74708c3
+NAME=inconsistent union extent never publishes a type through a qualified spelling
+FILE=hex://0fb74608c3
 ARGS=-a x86 -b 64 -e log.level=0
 CMDS=<<EOF
 af
 e r2ghidra.lang=x86:LE:64:default:gcc
-e r2ghidra.verbose=true
 tk U=union
 tk union.U=x
 tk union.U.x=uint16_t,0,0
 tk type.U.size=8
-"afs uint16_t read_union(U *p)"
+"afs uint16_t read_union(U *p, const U *q)"
 afc amd64
-pdg~Declared size is smaller than fields in union U~?
+pdgd~type name="U"~?
+pdgj
 tk type.U.size=64
+pdgd~type name="U"~size="8"~metatype="union"~?
+pdg~read_union(
+pdg~return
 tk union.U.x=uint16_t,2,0
-pdg~Nonzero offset for member x in union U~?
+pdgj
 tk union.U.x=uint16_t,0,0
 tk type.U.size=63
-pdg~Invalid declared extent for union U~?
+pdgj
+EOF
+EXPECT=<<EOF
+0
+{"errors":["Ghidra Decompiler Error: Failed to construct complete union U"]}
+1
+uint16_t read_union(U *p,U *q)
+    return q[1].x;
+{"errors":["Ghidra Decompiler Error: Failed to construct complete union U"]}
+{"errors":["Ghidra Decompiler Error: Failed to construct complete union U"]}
+EOF
+RUN
+
+NAME=failed recursive union construction aborts aliases and dependent arrays
+FILE=hex://0fb74608c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+tk U=union
+tk union.U=next,x
+tk union.U.next=U *,0,0
+tk union.U.x=uint16_t,0,0
+tk type.U.size=8
+"td typedef U UA;"
+"afs uint16_t read_alias(UA *p, const U *q)"
+afc amd64
+pdgj
+tk Holder=struct
+tk struct.Holder=values
+tk struct.Holder.values=UA,0,2
+"afs uint16_t read_holder(Holder *p, const U *q)"
+afc amd64
+pdgd~type name="U"~?
+pdgj
+tk union.U=x
+tk union.U.x=U,0,0
+tk type.U.size=64
+"afs uint16_t read_value(U *p, const U *q)"
+afc amd64
+pdgj
+EOF
+EXPECT=<<EOF
+{"errors":["Ghidra Decompiler Error: Failed to construct complete union U"]}
+0
+{"errors":["Ghidra Decompiler Error: Failed to construct complete union U"]}
+{"errors":["Ghidra Decompiler Error: Failed to construct complete union U"]}
+EOF
+RUN
+
+NAME=recursive union pointer retains the completed native identity
+FILE=hex://488b07c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+tk Node=union
+tk union.Node=next,value
+tk union.Node.next=Node *,0,0
+tk union.Node.value=uint64_t,0,0
+tk type.Node.size=64
+"afs uint64_t read_node(Node *p)"
+afc amd64
+pdgd~type name="Node"~size="8"~metatype="union"~?
+pdgd~field name="next" offset="0"~?
+pdgd~typeref name="Node"~?
+pdg~read_node(
+pdg~return
 EOF
 EXPECT=<<EOF
 1
 1
-1
+2
+uint64_t read_node(Node *p)
+    return p->value;
 EOF
 RUN

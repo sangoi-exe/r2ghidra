@@ -23,6 +23,9 @@ private:
 	// both caches live for the factory's lifetime (one decompile); Datatypes are owned by the factory
 	std::unordered_map<std::string, CStringCacheEntry> cstringCache;
 	std::unordered_map<std::string, Datatype *> lookupCache;
+	std::string typeConstructionError;
+
+	void checkTypeConstruction() const;
 
 	Datatype *queryR2Struct(const string &n, std::set<std::string> &stackTypes);
 	Datatype *queryR2Union(const string &n, std::set<std::string> &stackTypes);

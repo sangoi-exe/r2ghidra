@@ -40,6 +40,12 @@ R2TypeFactory::R2TypeFactory(R2Architecture *arch) : TypeFactory (arch), arch (a
 R2TypeFactory::~R2TypeFactory() {
 }
 
+void R2TypeFactory::checkTypeConstruction() const {
+	if (!typeConstructionError.empty ()) {
+		throw LowlevelError (typeConstructionError);
+	}
+}
+
 
 static type_metatype formatToMeta(const char *fmt) {
 	if (!fmt || !fmt[0]) {
@@ -482,6 +488,10 @@ Datatype *R2TypeFactory::queryR2Union(const string &n, std::set<std::string> &st
 				return nullptr;
 			}
 			memberType = code_to_pointer (this, memberType);
+			if (memberType->isIncomplete () || memberType->getSize () < 1) {
+				arch->addWarning ("Incomplete member " + std::string(member->name) + " in union " + n);
+				return nullptr;
+			}
 			if (member->count) {
 				const int4 stride = memberType->getAlignSize();
 				if (stride < 1 || member->count > static_cast<size_t>(INT_MAX / stride)) {
@@ -666,8 +676,21 @@ Datatype *R2TypeFactory::queryR2(const string &n, std::set<std::string> &stackTy
 		return queryR2Base(n);
 	case R_TYPE_STRUCT:
 		return queryR2Struct (n, stackTypes);
-	case R_TYPE_UNION:
-		return queryR2Union (n, stackTypes);
+	case R_TYPE_UNION: {
+		try {
+			Datatype *type = queryR2Union (n, stackTypes);
+			if (!type || type->isIncomplete ()) {
+				throw LowlevelError ("Failed to construct complete union " + n);
+			}
+			return type;
+		} catch (const LowlevelError &error) {
+			// Recursive dependents retain the identity; keep ownership but refuse further resolution.
+			if (typeConstructionError.empty ()) {
+				typeConstructionError = error.explain;
+			}
+			throw;
+		}
+	}
 	case R_TYPE_ENUM:
 		return queryR2Enum (n, stackTypes);
 	case R_TYPE_TYPEDEF:
@@ -726,11 +749,13 @@ Datatype *R2TypeFactory::findByIdResolved(const string &n, uint8 id, int4 sz, st
 }
 
 Datatype *R2TypeFactory::findById(const string &n, uint8 id, int4 sz, std::set<std::string> &stackTypes) {
+	checkTypeConstruction ();
 	return findByIdResolved (n, id, sz, stackTypes, nullptr, false);
 }
 
 // overriden call
 Datatype *R2TypeFactory::findById(const string &n, uint8 id, int4 sz) {
+	checkTypeConstruction ();
 	Datatype *r = TypeFactory::findById (n, id, sz);
 	if (r) {
 		return r;
@@ -786,6 +811,7 @@ Datatype *R2TypeFactory::arrayFromCString(const string &str, string *error, std:
 }
 
 Datatype *R2TypeFactory::fromCString(const string &str, string *error, std::set<std::string> *stackTypes) {
+	checkTypeConstruction ();
 	std::string key = normalize_ws (trim_ws (str));
 	if (key.empty ()) {
 		return nullptr;
