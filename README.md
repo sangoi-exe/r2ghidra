@@ -207,10 +207,7 @@ $ ./configure --prefix=$(r2 -H R2_PREFIX)
 $ make
 $ make install  # or make user-install
 ```
-`make` checks the pinned subproject revisions automatically. Existing
-ghidra-native checkouts are updated in place; before switching versions,
-patched sources and local changes are saved in a named Git stash inside
-`subprojects/ghidra-native`. A matching checkout can be reused offline.
+For ghidra-native, `make` acquires a missing checkout and checks its pinned revision. It can switch a clean, unprepared Git checkout; if the required revision changes in a prepared or dirty checkout, it refuses before fetch or checkout without stashing changes or removing `patch.done`. Preserve that tree and use a fresh matching tree instead. A matching Git checkout can be reused offline.
 
 At the moment there is no way to select which processors to support, so it builds them all and takes a lot of time to compile the sleighfiles.
 
@@ -224,8 +221,7 @@ meson compile -C b
 meson install -C b
 ```
 
-To update an existing ghidra-native checkout after the dependency pin changes,
-run `make -C subprojects ghidra-native` before reconfiguring Meson.
+After the ghidra-native pin changes, run `make -C subprojects ghidra-native` on a clean, unprepared Git checkout before reconfiguring Meson. A prepared or dirty checkout refuses the revision transition; preserve the old tree and use a fresh matching tree instead.
 
 ### Windows
 
