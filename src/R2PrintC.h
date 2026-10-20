@@ -10,6 +10,7 @@ using namespace ghidra;
 
 class R2PrintC : public PrintC {
 protected:
+	void pushPointerType(const TypePointer *type) override;
 	void pushUnnamedLocation(const Address &addr, const Varnode *vn,const PcodeOp *op) override;
 	// void opCast(const PcodeOp *op) override;
 

@@ -1,3 +1,246 @@
+NAME=compound return headers and annotations survive manual declaration and writeback
+FILE=hex://b83412cb
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+e types.plugin=c2
+af+ 0 original_name
+afb+ 0 0 4
+e r2ghidra.lang=x86:LE:16:Protected Mode
+"afs uint16_t far *(near *returns_table(void))[3]"
+tcc ax __cdecl16far(stack)
+afc __cdecl16far
+afs
+pdg~returns_table(
+pdgd~metatype="ptr"
+pdgd~metatype="array"
+pdgw
+afs
+pdgd~metatype="ptr"
+pdgd~metatype="array"
+"afs uint16_t far *(near *returns_table(uint16_t slot))[3]"
+afc __cdecl16far
+pdg~returns_table(
+pdgj~{annotations}
+pdgw
+afs
+pdgd~metatype="ptr"
+pdgd~metatype="array"
+pdgd~addr space="stack"
+pdg~returns_table(
+pdgw
+EOF
+EXPECT=<<EOF
+uint16_t far *(near *returns_table ())[3];
+uint16_t far *(near * __cdecl16far returns_table(void)) [3]
+                <type name="" size="2" metatype="ptr">
+                    <type name="" size="4" metatype="ptr" core="true">
+                  <type name="" size="12" metatype="array" arraysize="3">
+uint16_t far *(near *returns_table ())[3];
+                <type name="" size="2" metatype="ptr">
+                    <type name="" size="4" metatype="ptr" core="true">
+                  <type name="" size="12" metatype="array" arraysize="3">
+uint16_t far *(near * __cdecl16far returns_table(uint16_t slot)) [3]
+[{"start":1,"end":9,"type":"syntax_highlight","syntax_highlight":"datatype"},{"start":23,"end":35,"type":"syntax_highlight","syntax_highlight":"keyword"},{"start":36,"end":49,"type":"function_name","name":"returns_table","offset":0},{"start":36,"end":49,"type":"offset","offset":0},{"start":36,"end":49,"type":"syntax_highlight","syntax_highlight":"function_name"},{"start":50,"end":58,"type":"syntax_highlight","syntax_highlight":"datatype"},{"start":59,"end":63,"type":"function_parameter","name":"slot"},{"start":59,"end":63,"type":"syntax_highlight","syntax_highlight":"function_parameter"},{"start":67,"end":68,"type":"syntax_highlight","syntax_highlight":"constant_variable"},{"start":77,"end":83,"type":"offset","offset":3},{"start":77,"end":83,"type":"syntax_highlight","syntax_highlight":"keyword"},{"start":84,"end":90,"type":"constant_variable","offset":4660},{"start":84,"end":90,"type":"syntax_highlight","syntax_highlight":"constant_variable"},{"start":77,"end":90,"type":"offset","offset":3}]
+uint16_t far *(near *returns_table (uint16_t slot))[3];
+                <type name="" size="2" metatype="ptr">
+                    <type name="" size="4" metatype="ptr" core="true">
+                  <type name="" size="12" metatype="array" arraysize="3">
+                    <addr space="stack" offset="0x4"/>
+uint16_t far *(near * __cdecl16far returns_table(uint16_t slot)) [3]
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=x86-16 fundamental and default pointer widths survive native writeback
+FILE=hex://cb
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+e types.plugin=c2
+af+ 0 width_probe
+afb+ 0 0 1
+e r2ghidra.lang=x86:LE:16:Protected Mode
+"afs void width_probe(int number, uint16_t *pointer, uint16_t marker)"
+tcc ax __cdecl16far(stack)
+afc __cdecl16far
+pdgd~prototype model=
+pdgd~metatype="ptr"
+pdgd~addr space="stack"
+pdg~width_probe(
+e log.level=2
+pdgw
+afs
+pdgd~metatype="ptr"
+pdgd~addr space="stack"
+pdgw
+EOF
+EXPECT=<<EOF
+            <prototype model="__cdecl16far" extrapop="4" modellock="true">
+                      <type name="" size="2" metatype="ptr" core="true">
+                    <addr space="stack" offset="0x8"/>
+                    <addr space="stack" offset="0x4"/>
+                    <addr space="stack" offset="0x6"/>
+void __cdecl16far width_probe(int number,uint16_t near *pointer,uint16_t marker)
+void width_probe (int number, uint16_t near *pointer, uint16_t marker);
+                      <type name="" size="2" metatype="ptr" core="true">
+                    <addr space="stack" offset="0x8"/>
+                    <addr space="stack" offset="0x4"/>
+                    <addr space="stack" offset="0x6"/>
+EOF
+EXPECT_ERR=<<EOF
+INFO: pdgw: wrote 0 types, 0 names, signature
+INFO: pdgw: no changes
+EOF
+RUN
+
+NAME=mixed pointer and pointer-to-array layers survive native writeback
+FILE=hex://cb
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+e types.plugin=c2
+af+ 0 mixed
+afb+ 0 0 1
+e r2ghidra.lang=x86:LE:16:Protected Mode
+"afs void mixed(uint16_t far * near *value)"
+tcc ax __cdecl16far(stack)
+afc __cdecl16far
+pdgd~metatype="ptr"
+pdg~mixed(
+pdgw
+afs
+pdgd~metatype="ptr"
+pdgw
+"afs void arrays(uint16_t far *(near *table)[3])"
+afc __cdecl16far
+pdgd~metatype="ptr"
+pdgd~metatype="array"
+pdg~arrays(
+pdgw
+afs
+pdgd~metatype="ptr"
+pdgd~metatype="array"
+pdgw
+EOF
+EXPECT=<<EOF
+                      <type name="" size="2" metatype="ptr" core="true">
+                        <type name="" size="4" metatype="ptr" core="true">
+void __cdecl16far mixed(uint16_t far *near *value)
+void mixed (uint16_t far * near *value);
+                      <type name="" size="2" metatype="ptr" core="true">
+                        <type name="" size="4" metatype="ptr" core="true">
+                      <type name="" size="2" metatype="ptr">
+                        <type name="" size="4" metatype="ptr" core="true">
+                        <type name="" size="12" metatype="array" arraysize="3">
+void __cdecl16far arrays(uint16_t far *(near *table) [3])
+void arrays (uint16_t far *(near *table)[3]);
+                      <type name="" size="2" metatype="ptr">
+                        <type name="" size="4" metatype="ptr" core="true">
+                        <type name="" size="12" metatype="array" arraysize="3">
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=far callback representation retains one near-pointer input and separate convention
+FILE=hex://cb
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+e types.plugin=c2
+af+ 0 callbacks
+afb+ 0 0 1
+e r2ghidra.lang=x86:LE:16:Protected Mode
+"td typedef int (far *Callback)(uint16_t near *value);"
+tk typedef.Callback
+"afs void callbacks(int (far *callback)(uint16_t near *value))"
+tcc ax __cdecl16far(stack)
+afc __cdecl16far
+pdgd~metatype="ptr"
+pdgd~prototype model=
+pdgd~param name="value"~?
+pdg~callbacks(
+pdgw
+afs
+pdgd~metatype="ptr"
+pdgd~param name="value"~?
+pdgw
+EOF
+EXPECT=<<EOF
+func.Callback far *
+                      <type name="" size="4" metatype="ptr">
+                        <type name="" size="2" metatype="ptr" core="true">
+                        <prototype model="__stdcall16near" extrapop="unknown" modellock="true">
+            <prototype model="__cdecl16far" extrapop="4" modellock="true">
+1
+void __cdecl16far callbacks(int (far *callback)(uint16_t near *))
+void callbacks (int (far *callback)(uint16_t near *value));
+                      <type name="" size="4" metatype="ptr">
+                        <type name="" size="2" metatype="ptr" core="true">
+1
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=x86-16 ten-byte floating elements retain contiguous native array stride
+FILE=hex://cb
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+e types.plugin=c2
+af+ 0 extended
+afb+ 0 0 1
+e r2ghidra.lang=x86:LE:16:Protected Mode
+"td struct ExtendedArray { long double values[2]; };"
+tss ExtendedArray
+"afs void extended(ExtendedArray *array)"
+tcc ax __cdecl16far(stack)
+afc __cdecl16far
+pdgd~type name="long double"~size="10"~?
+pdgd~type name="ExtendedArray"~size="20"~?
+pdgd~metatype="array"~size="20"~arraysize="2"~?
+pdg~extended(
+EOF
+EXPECT=<<EOF
+20
+1
+1
+1
+void __cdecl16far extended(ExtendedArray near *array)
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=unsupported qualifiers and obsolete implicit callback objects fail visibly
+FILE=hex://c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+e types.plugin=c2
+af+ 0 reject_type
+afb+ 0 0 1
+e r2ghidra.lang=x86:LE:64:default:gcc
+"afs void reject_type(uint16_t *value)"
+tk func.reject_type.arg.0=uint16_t far *,value
+pdgj
+tk func.reject_type.arg.0=int &,value
+pdgj
+"tk func.reject_type.arg.0=int &&,value"
+pdgj
+tk OldCallback=func
+tk func.OldCallback.ret=int
+tk func.OldCallback.args=0
+tk func.reject_type.arg.0=func.OldCallback,value
+pdgj
+EOF
+EXPECT=<<EOF
+{"errors":["Ghidra Decompiler Error: Explicit near/far pointers require an x86/16 segmented target"]}
+{"errors":["Ghidra Decompiler Error: C++ references are not supported by native type import"]}
+{"errors":["Ghidra Decompiler Error: C++ references are not supported by native type import"]}
+{"errors":["Ghidra Decompiler Error: Function parameter requires an explicit pointer: func.OldCallback"]}
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
 NAME=unknown and missing native models do not export a numeric coordinate fallback
 FILE=malloc://128
 ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
@@ -2139,16 +2382,18 @@ EXPECT=<<EOF2
 EOF2
 RUN
 
-NAME=pdg survives an unparseable var type string instead of recursing
+NAME=shared function-pointer variable retains its one-input prototype
 FILE=bins/dectest64
 CMDS=<<EOF
 s sym.Aeropause
 af
-afvt arg1 int (*)(int)
+"afvt arg1 int (*)(int)"
+pdgd~metatype="code"~?
 pdg~Aeropause(
 EOF
 EXPECT=<<EOF
-void sym.Aeropause(int arg1,int64_t arg2,int64_t arg3)
+1
+void sym.Aeropause(int (*arg1)(int),int64_t arg2,int64_t arg3)
 EOF
 RUN
 
@@ -2287,7 +2532,7 @@ pdgw
 afs
 EOF
 EXPECT=<<EOF
-int main (int argc, char **argv);
+int main (int argc, char * *argv);
 EOF
 EXPECT_ERR=<<EOF
 INFO: pdgw: no changes
@@ -2350,14 +2595,14 @@ afv
 EOF
 EXPECT=<<EOF
 arg int argc @ rdi
-arg char ** argv @ rsi
+arg char * * argv @ rsi
 var int64_t var_8h @ rbp-0x8
-var uint8_t[24] var_20h @ rbp-0x20
+var uint8_t [24] var_20h @ rbp-0x20
 var int32_t var_24h @ rbp-0x24
 var int64_t var_30h @ rbp-0x30
 EOF
 EXPECT_ERR=<<EOF
-INFO: pdgw: wrote 1 types, 0 names
+INFO: pdgw: wrote 2 types, 0 names, signature
 EOF
 RUN
 
@@ -2591,13 +2836,13 @@ pdgw
 afv~var_20h
 EOF
 EXPECT=<<EOF
-var uint8_t[24] var_20h @ rbp-0x20
+var uint8_t [24] var_20h @ rbp-0x20
     uint8_t var_20h [24];
     sym.Aeropause(var_20h,argc,argv);
-var uint8_t[24] var_20h @ rbp-0x20
+var uint8_t [24] var_20h @ rbp-0x20
 EOF
 EXPECT_ERR=<<EOF
-INFO: pdgw: wrote 1 types, 0 names
+INFO: pdgw: wrote 2 types, 0 names, signature
 INFO: pdgw: no changes
 EOF
 RUN
@@ -2618,8 +2863,8 @@ EOF
 EXPECT=<<EOF
     uint8_t var_20h [2] [3];
     sym.Aeropause(var_20h,argc,argv);
-var uint8_t[2][3] var_20h @ rbp-0x20
-var uint8_t[2][3] var_20h @ rbp-0x20
+var uint8_t [2][3] var_20h @ rbp-0x20
+var uint8_t [2][3] var_20h @ rbp-0x20
 EOF
 EXPECT_ERR=<<EOF
 EOF
@@ -2878,13 +3123,13 @@ afv~var_10h
 pdg~var_8h =
 EOF
 EXPECT=<<EOF
-var uint8_t[8] var_10h @ rbp-0x10
+var uint8_t [8] var_10h @ rbp-0x10
     var_8h = arg1;
     consume(var_10h);
-var uint8_t[8] var_10h @ rbp-0x10
+var uint8_t [8] var_10h @ rbp-0x10
     var_8h = arg1;
     consume(var_10h);
-var uint8_t[8] var_10h @ rbp-0x10
+var uint8_t [8] var_10h @ rbp-0x10
     var_8h = arg1;
 EOF
 EXPECT_ERR=<<EOF
@@ -2916,10 +3161,10 @@ pdg~ =
 pdg~consume(
 EOF
 EXPECT=<<EOF
-var int32_t[4] var_10h @ rbp-0x10
+var int32_t [4] var_10h @ rbp-0x10
     var_10h[2] = arg1;
     consume(var_10h);
-var int32_t[4] var_10h @ rbp-0x10
+var int32_t [4] var_10h @ rbp-0x10
     var_10h[2] = arg1;
     consume(var_10h);
 EOF
@@ -2954,10 +3199,10 @@ pdg~var_8h =~?
 pdg~consume(
 EOF
 EXPECT=<<EOF
-var uint8_t[4] var_14h @ rbp-0x14
+var uint8_t [4] var_14h @ rbp-0x14
 0
     consume(&var_10h);
-var uint8_t[4] var_14h @ rbp-0x14
+var uint8_t [4] var_14h @ rbp-0x14
 0
     consume(&var_10h);
 EOF

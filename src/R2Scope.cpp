@@ -132,33 +132,14 @@ static Element *childAddr(Element *el, const std::string &name, const Address &a
 }
 
 static Element *childType(Element *el, Datatype *type) {
-	auto pointer = dynamic_cast<TypePointer *>(type);
-	if (pointer) {
-		Element *r = child (el, "type", {
-			{ "name", type->getName () },
-			{ "size", to_string (pointer->getSize ()) },
-			{ "metatype", "ptr" }
-		});
-		childType (r, pointer->getPtrTo ());
-		return r;
+	std::stringstream encoded;
+	XmlEncode encoder (encoded, false);
+	type->encodeRef (encoder);
+	TreeHandler handler (el);
+	if (xml_parse (encoded, &handler, 0)) {
+		throw DecoderError (handler.getError ());
 	}
-
-	auto array = dynamic_cast<TypeArray *>(type);
-	if (array) {
-		Element *r = child (el, "type", {
-			{ "name", "" },
-			{ "size", to_string (array->getSize ()) },
-			{ "arraysize", to_string (array->numElements ()) },
-			{ "metatype", "array" }
-		});
-		childType (r, array->getBase());
-		return nullptr;
-	}
-
-	return child (el, "typeref", {
-		{ "name", type->getName () },
-		{ "id", hex (type->getId ()) }
-	});
+	return el->getChildren ().back ();
 }
 
 static std::string to_string(const char *str) {
@@ -189,6 +170,9 @@ struct FunctionVars {
 	Datatype *varType(RAnalVar *var) {
 		std::string typeError;
 		Datatype *type = var->type ? arch->getTypeFactory ()->fromCString (var->type, &typeError) : nullptr;
+		if (type && type->getMetatype () == TYPE_CODE) {
+			throw LowlevelError ("Function object requires an explicit pointer: " + to_string (var->type));
+		}
 		if (!type) {
 			arch->addWarning ("Failed to match type " + to_string (var->type) + " for variable " + to_string (var->name) + " to Decompiler type: " + typeError);
 			type = arch->types->getBase (default_size, TYPE_UNKNOWN);
@@ -410,6 +394,9 @@ static Datatype *resolveFunctionSignatureReturnType(R2Architecture *arch, const 
 	}
 	std::string typeError;
 	Datatype *type = arch->getTypeFactory ()->fromCString (signature->ret_type, &typeError);
+	if (type && (type->getMetatype () == TYPE_CODE || type->getMetatype () == TYPE_ARRAY)) {
+		throw LowlevelError ("Invalid function return type " + to_string (signature->ret_type));
+	}
 	if (!type) {
 		arch->addWarning ("Failed to match return type " + to_string (signature->ret_type) + " for function " + to_string (fcn_name) + ": " + typeError);
 	}
@@ -445,6 +432,9 @@ static void processFunctionSignature(
 		std::string name = R_STR_ISNOTEMPTY (arg->name)? arg->name: "arg" + to_string (sig_args.size ());
 		std::string typeError;
 		Datatype *type = arch->getTypeFactory ()->fromCString (arg->type, &typeError);
+		if (type && type->getMetatype () == TYPE_CODE) {
+			throw LowlevelError ("Function parameter requires an explicit pointer: " + to_string (arg->type));
+		}
 		if (!type) {
 			arch->addWarning ("Failed to match arg type " + to_string (arg->type) + " for function " + to_string (fcn_name) + ": " + typeError);
 			type = arch->types->getBase (default_size, TYPE_UNKNOWN);
@@ -823,6 +813,9 @@ Symbol *R2Scope::registerGlobalVar(RFlagItem *glob, const char *type_str) const 
 	const int default_size = core->anal->config->bits / 8;
 
 	type = arch->getTypeFactory ()->fromCString (type_str, &typeError);
+	if (type && type->getMetatype () == TYPE_CODE) {
+		throw LowlevelError ("Function object requires an explicit pointer: " + to_string (type_str));
+	}
 	if (!type && type_str && type_str[0]) {
 		type = formatCharToType (arch->types, type_str[0], default_size);
 	}

@@ -372,23 +372,23 @@ void R2Architecture::buildCoreTypes(DocumentStorage &store) {
 	types->setCoreType ("int16_t", 2, TYPE_INT, false);
 	types->setCoreType ("int32_t", 4, TYPE_INT, false);
 	types->setCoreType ("int64_t", 8, TYPE_INT, false);
-	types->setCoreType ("int", sizeof (int), TYPE_INT, false);
+	types->setCoreType ("int", types->getSizeOfInt (), TYPE_INT, false);
 
-	types->setCoreType ("double", 8, TYPE_FLOAT, false);
-	types->setCoreType ("float", 4, TYPE_FLOAT, false);
+	types->setCoreType ("double", types->getSizeOfDouble (), TYPE_FLOAT, false);
+	types->setCoreType ("float", types->getSizeOfFloat (), TYPE_FLOAT, false);
 	types->setCoreType ("float8", 8, TYPE_FLOAT, false);
 	types->setCoreType ("float10", 10, TYPE_FLOAT, false);
 	types->setCoreType ("float16", 16 ,TYPE_FLOAT, false);
 
-	types->setCoreType ("uchar", 1, TYPE_UNKNOWN, false);
-	types->setCoreType ("ushort", 2, TYPE_UNKNOWN, false);
-	types->setCoreType ("uint", 4, TYPE_UNKNOWN, false);
-	types->setCoreType ("ulong", 8, TYPE_UNKNOWN, false);
+	types->setCoreType ("uchar", types->getSizeOfChar (), TYPE_UNKNOWN, false);
+	types->setCoreType ("ushort", types->getSizeOfShort (), TYPE_UNKNOWN, false);
+	types->setCoreType ("uint", types->getSizeOfInt (), TYPE_UNKNOWN, false);
+	types->setCoreType ("ulong", types->getSizeOfLong (), TYPE_UNKNOWN, false);
 
 	types->setCoreType ("code", 1, TYPE_CODE, false);
 
-	types->setCoreType ("char", 1, TYPE_INT, true);
-	types->setCoreType ("wchar", 2, TYPE_INT, true);
+	types->setCoreType ("char", types->getSizeOfChar (), TYPE_INT, true);
+	types->setCoreType ("wchar", types->getSizeOfWChar (), TYPE_INT, true);
 	// types->setCoreType ("char8_t", 1, TYPE_INT, true); // last type defined overrides the previous
 	types->setCoreType ("char16_t", 2, TYPE_INT, true);
 	types->setCoreType ("char32_t", 4, TYPE_INT, true);

@@ -8,6 +8,7 @@ R2GHIDRA_SRCS+=PcodeFixupPreprocessor.cpp
 R2GHIDRA_SRCS+=R2LoadImage.cpp
 R2GHIDRA_SRCS+=R2Scope.cpp
 R2GHIDRA_SRCS+=R2TypeFactory.cpp
+R2GHIDRA_SRCS+=R2TypeDeclaration.cpp
 R2GHIDRA_SRCS+=R2CommentDatabase.cpp
 R2GHIDRA_SRCS+=CodeXMLParse.cpp
 R2GHIDRA_SRCS+=ArchMap.cpp

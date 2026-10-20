@@ -19,6 +19,7 @@ r2g_src_names = [
   'R2LoadImage.cpp',
   'R2Scope.cpp',
   'R2TypeFactory.cpp',
+  'R2TypeDeclaration.cpp',
   'R2CommentDatabase.cpp',
   'CodeXMLParse.cpp',
   'ArchMap.cpp',

@@ -5,6 +5,7 @@
 #define R2GHIDRA_R2TYPEFACTORY_H
 
 #include <type.hh>
+#include <r_util.h>
 
 #include <unordered_map>
 
@@ -14,7 +15,6 @@ class R2Architecture;
 class R2TypeFactory : public TypeFactory {
 private:
 	R2Architecture *arch;
-	// RParseCType *ctype;
 
 	struct CStringCacheEntry {
 		Datatype *type; // nullptr = cached resolution failure
@@ -42,7 +42,8 @@ private:
 	Datatype *queryR2Function(const string &n, TypeResolution &resolution);
 	Datatype *queryR2(const string &n, TypeResolution &resolution);
 	Datatype *fromCStringResolved(const string &str, string *error, TypeResolution &resolution);
-	Datatype *arrayFromCString(const string &str, string *error, TypeResolution &resolution);
+	Datatype *fromDeclaration(const RTypeDeclNode *node, string *error, TypeResolution &resolution, bool behindPointer, int depth = 0);
+	RTypeDecl *toDeclaration(Datatype *type, int depth) const;
 	Datatype *findByIdResolved(const string &n, uint8 id, int4 sz, TypeResolution &resolution, Datatype *r, bool resolvedBase);
 	Datatype *findByName(const string &n, TypeResolution &resolution) { return findByIdResolved(n, 0, 0, resolution, nullptr, false); }
 
@@ -58,7 +59,9 @@ public:
 	~R2TypeFactory() override;
 
 	Datatype *fromCString(const string &str, string *error = nullptr, std::set<std::string> *stackTypes = nullptr);
-	static std::string toCString(Datatype *type);
+	std::string toCString(Datatype *type) const;
+	bool hasSegmentedPointers() const;
+	RTypePointerKind pointerKind(const TypePointer *type) const;
 };
 
 #endif //R2GHIDRA_R2TYPEFACTORY_H

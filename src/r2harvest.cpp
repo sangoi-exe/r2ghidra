@@ -77,7 +77,7 @@ static void FillHarvestVar(R2Architecture &arch, const std::string &name, bool n
 		out.name = name;
 		out.nameDefined = true;
 	}
-	out.type = R2TypeFactory::toCString (type);
+	out.type = arch.getTypeFactory ()->toCString (type);
 	HarvestStorage (arch, addr, size, defaultSize, out);
 }
 
@@ -89,7 +89,7 @@ static bool PrototypeStorageMatches(R2Architecture &arch, const FuncProto &proto
 		return false;
 	}
 	auto roundTrip = [&](Datatype *type) {
-		std::string name = R2TypeFactory::toCString (type);
+		std::string name = arch.getTypeFactory ()->toCString (type);
 		return name.empty () ? nullptr : arch.getTypeFactory ()->fromCString (name);
 	};
 	pieces.outtype = roundTrip (pieces.outtype);
@@ -145,7 +145,7 @@ void HarvestFuncdata(R2Architecture &arch, Funcdata *func, Harvest &out) {
 	out.proto.valid = PrototypeStorageMatches (arch, proto, paramsMatch);
 	out.proto.dotdotdot = proto.isDotdotdot ();
 	out.proto.noreturn = proto.isNoReturn ();
-	out.proto.retType = R2TypeFactory::toCString (proto.getOutputType ());
+	out.proto.retType = arch.getTypeFactory ()->toCString (proto.getOutputType ());
 	for (int4 i = 0; i < proto.numParams (); i++) {
 		ProtoParameter *param = proto.getParam (i);
 		if (!param || param->isHiddenReturn ()) {
@@ -183,14 +183,39 @@ void HarvestFuncdata(R2Architecture &arch, Funcdata *func, Harvest &out) {
 	}
 }
 
-static bool TypeParseable(RAnal *anal, const std::string &type) {
-	const std::string element = type.substr (0, type.find ('['));
-	const size_t end = element.find_last_not_of ("* ");
-	if (end == std::string::npos) {
+static bool DeclarationKnown(RAnal *anal, const RTypeDeclNode *node) {
+	if (!node) {
 		return false;
 	}
-	const std::string base = element.substr (0, end + 1);
-	return base == "void" || r_type_kind (anal->sdb_types, base.c_str ()) != R_TYPE_INVALID;
+	if (node->kind == R_TYPE_DECL_LVALUE_REFERENCE || node->kind == R_TYPE_DECL_RVALUE_REFERENCE) {
+		return false;
+	}
+	if (node->kind == R_TYPE_DECL_BASE) {
+		const char *name = node->base.name;
+		for (const char *prefix : { "struct ", "union ", "enum ", "func." }) {
+			if (r_str_startswith (name, prefix)) {
+				name += strlen (prefix);
+				break;
+			}
+		}
+		return !strcmp (name, "void") || r_type_kind (anal->sdb_types, name) != R_TYPE_INVALID;
+	}
+	if (node->kind == R_TYPE_DECL_FUNCTION) {
+		for (RListIter *iter = node->function.parameters->head; iter; iter = iter->n) {
+			auto parameter = static_cast<const RTypeDecl *>(iter->data);
+			if (!DeclarationKnown (anal, parameter->type)) {
+				return false;
+			}
+		}
+	}
+	return DeclarationKnown (anal, node->child);
+}
+
+static bool TypeParseable(RAnal *anal, const std::string &type, bool returnType = false) {
+	RTypeDecl *decl = r_type_decl_parse (type.c_str (), nullptr);
+	const bool valid = decl && (!returnType || (decl->type->kind != R_TYPE_DECL_ARRAY && decl->type->kind != R_TYPE_DECL_FUNCTION)) && DeclarationKnown (anal, decl->type);
+	r_type_decl_free (decl);
+	return valid;
 }
 
 static RAnalVar *MatchRegVar(RCore *core, RAnalFunction *fcn, const std::string &regName) {
@@ -262,7 +287,7 @@ static bool WriteSignature(RCore *core, RAnalFunction *fcn, const Harvest &h) {
 	RAnalFunctionSignature *cur = r_anal_function_get_signature (fcn);
 	const char *curRet = (cur && R_STR_ISNOTEMPTY (cur->ret_type)) ? cur->ret_type : NULL;
 	std::string ret = h.proto.retType;
-	if (ret.empty () || ret.find ('[') != std::string::npos || !TypeParseable (core->anal, ret)) {
+	if (ret.empty () || !TypeParseable (core->anal, ret, true)) {
 		ret = curRet ? curRet : "void";
 	} else if (ret == "void" && curRet && strcmp (curRet, "void")) {
 		// the decompiler demotes unused return values to void; never lose a known return type
@@ -276,7 +301,7 @@ static bool WriteSignature(RCore *core, RAnalFunction *fcn, const Harvest &h) {
 	bool complete = true;
 	int idx = 0;
 	for (const HarvestVar &hv : h.proto.params) {
-		if (hv.type.empty () || hv.type.find ('[') != std::string::npos || !TypeParseable (core->anal, hv.type)) {
+		if (hv.type.empty () || !TypeParseable (core->anal, hv.type)) {
 			complete = false;
 			break;
 		}

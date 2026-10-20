@@ -5,6 +5,8 @@
 #include <varnode.hh>
 
 #include "R2PrintC.h"
+#include "R2Architecture.h"
+#include "R2TypeFactory.h"
 #include "RCoreMutex.h"
 
 
@@ -59,6 +61,20 @@ R2PrintC::R2PrintC(Architecture *g, const string &nm) : PrintC(g, nm) {
 
 void R2PrintC::setOptionNoCasts(bool nc) {
 	option_nocasts = nc;
+}
+
+void R2PrintC::pushPointerType(const TypePointer *type) {
+	auto arch = dynamic_cast<R2Architecture *>(glb);
+	const RTypePointerKind kind = arch ? arch->getTypeFactory ()->pointerKind (type) : R_TYPE_POINTER_DEFAULT;
+	static OpToken nearPointer = { "near *", "", 1, 62, false, OpToken::unary_prefix, 0, 0, nullptr };
+	static OpToken farPointer = { "far *", "", 1, 62, false, OpToken::unary_prefix, 0, 0, nullptr };
+	if (kind == R_TYPE_POINTER_NEAR) {
+		pushOp (&nearPointer, nullptr);
+	} else if (kind == R_TYPE_POINTER_FAR) {
+		pushOp (&farPointer, nullptr);
+	} else {
+		PrintC::pushPointerType (type);
+	}
 }
 
 #if 0

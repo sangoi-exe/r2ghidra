@@ -6,7 +6,7 @@ The manual helper procedure below is a narrow, explicitly supplied analysis cont
 
 ## Build the matching local components
 
-`subprojects/ghidra-native.wrap` is the single engine URL/revision pin: Meson reads it directly, and `subprojects/ghidra-native.mk` derives its Make settings from it. It selects the `sangoi-exe/ghidra-native` fork at an exact engine commit, not upstream 0.7.2. The current pin is `3ee06068bc8e5c483bbb35a45a23b9f4eafadfa6`. The local procedure below can consume that exact committed revision without establishing its remote publication or acquisition. A fresh network-only build of the current pin is not yet established. Do not replace the pin with an older engine merely to make a remote fetch succeed.
+`subprojects/ghidra-native.wrap` is the single engine URL/revision pin: Meson reads it directly, and `subprojects/ghidra-native.mk` derives its Make settings from it. It selects the `sangoi-exe/ghidra-native` fork at an exact engine commit, not upstream 0.7.2. The current pin is `3f46b7c7e70599d394a08a6a71b252c0cbb4fa9f`. The local procedure below can consume that exact committed revision without establishing its remote publication or acquisition. A fresh network-only build of the current pin is not yet established. Do not replace the pin with an older engine merely to make a remote fetch succeed.
 
 For the qualified local build, populate a fresh subproject from the matching local direct child. Run this from the r2ghidra repository root, with `./ghidra-native` pointing to that editable engine repository. In a disposable r2ghidra source copy, supply the matching local engine repository at that direct-child path first. The commands refuse an existing subproject path rather than switching or stashing someone else's checkout; use a fresh disposable r2ghidra source copy if that path is already occupied.
 
@@ -39,6 +39,8 @@ meson compile -C "$build" -j 2 core_r2ghidra sleigh-DATA sleigh-x86 pcode-xml-te
 
 These bounded targets build the native plugin, DATA/x86 language specifications, native regression driver and p-code XML test executable from the same prepared engine. This command does not build or validate every processor. The separate `meson test` command runs the native regressions, preparation controls (including real Sleigh compilation) and encoder test; compilation alone does not. The repeated build validates matching reuse after generated language outputs exist.
 
+The complete `test/db/extras/r2ghidra_types` file also exercises AARCH64 and PowerPC controls. Build the additional `sleigh-AARCH64` and `sleigh-PowerPC` targets and select a matching language bundle containing DATA, x86, AARCH64 and PowerPC for that run. The flat x86 directory used below is sufficient only for the x86-specific observations, not that full regression file.
+
 Meson configuration and build reuse invoke the engine's shared preparation runner. `patch.done` records the ordered patch and prepared-source identities; matching prepared distributions need no Git. Stale, malformed or old empty markers, changed source inputs, and markerless dirty/partly prepared trees refuse without changing source bytes. Preserve changes and populate a new checkout or use a matching prepared distribution; never remove the marker and retry on that tree. Normal flat `src/decompiler/*.o` outputs paired with adjacent `.cc` inputs and processor `.sla` outputs paired with `.slaspec` inputs do not invalidate preparation; canonical sources, headers, specifications and includes remain checked. Do not hand-edit the prepared `src` tree or introduce a second engine pin.
 
 Make remains supported through the same wrap. Its Git subproject manager can acquire a fresh checkout or switch a clean, unprepared checkout, but refuses a different pin in a prepared or dirty checkout before fetch or checkout. It does not stash changes or remove the preparation marker; preserve user bytes and use a fresh matching tree. Packaged distributions use their distribution Makefile to validate the prepared engine without Git acquisition. XPS Make/Meson also validate preparation on reuse through their own build dependencies. The bounded Meson procedure above does not qualify the full bridge Make, packaged-distribution or XPS host-linkage paths; those need separate consumer observations, not just native tests or source inspection.
@@ -54,6 +56,39 @@ e r2ghidra.sleighhome=/absolute/r2ghidra/subprojects/ghidra-native/src/Processor
 ```
 
 Replace the absolute language path with the local r2ghidra source path. Use the directory containing `x86.ldefs` and the compiled `x86.sla`, not the generic `Processors` root; the `sleigh-x86` target compiles these specifications. The plugin and language files must come from the same pinned engine candidate.
+
+## Target-correct declarations and pointer layers
+
+Rebuild the host and plugin together and use the default `types.plugin=c2`: the bridge consumes the host's shared `RTypeDecl` API, not a private declarator parser or a scratch `typedef` passed back through `c2`. An older installed host is not a supported substitute. Both declaration import and harvest/writeback use that shared declaration structure; native compiler-specification data owns the bridge's fundamental sizes and default C pointer width. Shared syntax support for references does not provide native C++ reference import or ABI support; the bridge rejects reference declarations explicitly.
+
+For the selected x86/16 segmented languages, unqualified C pointers use the native two-byte default, explicit `near *` uses two bytes and explicit `far *` uses four bytes. Each layer is independent: `uint16_t far * near *` is a near pointer to a far pointer. Pointer-to-array and function-pointer parentheses remain significant. The specialized C printer spells each representable near/far layer from its native width; other targets retain ordinary native pointer syntax. An explicit near/far declaration on an unsupported target fails rather than becoming an unrelated type. Pointers used internally for synthetic analysis coordinates retain their coordinate width; they do not set the default C data model or establish runtime selectors.
+
+The x86/16 model uses two-byte `int` and `short`, four-byte `long` and `float`, eight-byte `double`, and ten-byte `long double`. Its selected local analysis model keeps `long long` at eight bytes. The latter is not a claim that Borland 3.1 accepts `long long` source. Fixed-width names such as `uint32_t` remain fixed-width independently of the fundamental defaults.
+
+Function-signature metadata remains under `func.NAME`; pointer representation is stored explicitly around the function reference, for example `typedef.CB=func.CB far *`. Bare `func.CB` denotes a function type, not a sized callback object. Previously saved callback declarations relying on the old implicit-pointer handle require re-import through `c2`; there is no migration or dual interpretation. The optional TinyCC parser still emits obsolete implicit callback handles and is outside this qualified declaration path: re-import those callback declarations with `types.plugin=c2`, rather than expecting a compatibility coercion. The removed `__r2ghidra_t_` workaround no longer creates scratch declarations or receives special reverse-conversion treatment. A retained alias is treated as an ordinary named alias, not unwrapped because of its prefix. None of these pointer qualifiers selects an operational calling convention.
+
+Scope datatype marshaling uses the native datatype encoder, including full anonymous callback prototypes. Native prototype XML keeps the return in `returnsym` and only ordered inputs in `internallist`; the matching engine is required so a callback does not gain its return type as an input. Older erroneous native dumps containing that extra input are not migrated or supported as an alternate format.
+
+In a fresh x86/16 Protected Mode session using the matching components, this bounded check exercises the corrected ordinary defaults without a compiler-specific callback convention:
+
+```text
+af+ 0 width_probe
+afb+ 0 0 1
+e r2ghidra.lang=x86:LE:16:Protected Mode
+e types.plugin=c2
+"afs void width_probe(int number, uint16_t *pointer, uint16_t marker)"
+tcc ax __cdecl16far(stack)
+afc __cdecl16far
+pdgd~prototype model=
+pdgd~addr space="stack"
+pdg~width_probe(
+```
+
+Supply a one-byte RETF (`cb`) at address zero in the disposable input before defining this function. Require the exact locked `__cdecl16far` model and entry stack offsets 4, 6 and 8 for the ordered arguments, with a size-two pointer and near-qualified C spelling. Repeat with explicit near/far nested pointers and inspect both pointer nodes, not only total argument storage. `pdgw` followed by another `pdgd` checks the reverse boundary; compare type shape and storage, not only nonempty C. These checks establish the selected analysis model, not game recompilation or runtime selector validity.
+
+Compound returns require the matching rebuilt host and native printer as well. Manual `afs uint16_t far *(near *returns_table(void))[3]` selects `returns_table` through shared signature preparation; Core still owns the rename and flags. With the explicit `__cdecl16far` model, the native complete header is `uint16_t far *(near * __cdecl16far returns_table(void)) [3]`, not an abstract return followed by a detached function name. Its return graph is a near pointer of size two to an array of three far pointers of size four; the array occupies twelve bytes. `pdgw`, `afs` and a fresh `pdgd` retain that graph.
+
+The same contextual printer keeps `pdgj` function-name identity and backed parameter annotations: the `returns_table(uint16_t slot)` variant associates the function token with `returns_table` at its function address and the parameter token with `slot`. Native return-token associations remain separate from those function/parameter tokens. These observations qualify declaration shape, existing annotations and writeback using matching components; no original Borland compiler roundtrip or byte-identical game rebuild was performed.
 
 ## Qualify the input first
 

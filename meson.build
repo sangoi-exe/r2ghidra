@@ -13,6 +13,7 @@ r2ghidra_sources = [
   'src/R2LoadImage.cpp',
   'src/R2Scope.cpp',
   'src/R2TypeFactory.cpp',
+  'src/R2TypeDeclaration.cpp',
   'src/R2CommentDatabase.cpp',
   'src/CodeXMLParse.cpp',
   'src/ArchMap.cpp',
