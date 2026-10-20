@@ -6,7 +6,7 @@ The manual helper procedure below is a narrow, explicitly supplied analysis cont
 
 ## Build the matching local components
 
-`subprojects/ghidra-native.wrap` is the single engine URL/revision pin: Meson reads it directly, and `subprojects/ghidra-native.mk` derives its Make settings from it. It selects the `sangoi-exe/ghidra-native` fork at an exact engine commit, not upstream 0.7.2. The current pin is `06632d7bf0927ceeadd32b2829dc935afddbe101`. Remote availability of this commit is distinct from validation of a fresh network-only build. A fresh network-only build of the current pin is not yet established. Do not replace the pin with an older engine merely to make a remote fetch succeed.
+`subprojects/ghidra-native.wrap` is the single engine URL/revision pin: Meson reads it directly, and `subprojects/ghidra-native.mk` derives its Make settings from it. It selects the `sangoi-exe/ghidra-native` fork at an exact engine commit, not upstream 0.7.2. The current pin is `a3a4d7682d8474594c9a9b567f19fdd9b8cee21f`. Remote availability of this commit is distinct from validation of a fresh network-only build. A fresh network-only build of the current pin is not yet established. Do not replace the pin with an older engine merely to make a remote fetch succeed.
 
 For the qualified local build, populate a fresh subproject from the matching local direct child. Run this from the r2ghidra repository root, with `./ghidra-native` pointing to that editable engine repository. In a disposable r2ghidra source copy, supply the matching local engine repository at that direct-child path first. The commands refuse an existing subproject path rather than switching or stashing someone else's checkout; use a fresh disposable r2ghidra source copy if that path is already occupied.
 
@@ -26,14 +26,20 @@ Use the existing Meson build with the intended private radare2 on `PATH` and its
 
 ```sh
 pkg-config --modversion r_core
-mkdir -p "$HOME/.cache/codex/native-transfer"
-build=$(mktemp -d "$HOME/.cache/codex/native-transfer/r2ghidra-build-XXXXXX")
-meson setup "$build" --wrap-mode=nodownload
-meson compile -C "$build" -j 2 core_r2ghidra sleigh-DATA sleigh-x86 pcode-xml-test
-meson test -C "$build" pcode-xml --print-errorlogs
+mkdir -p "$HOME/.cache/codex/r2ghidra/local-integration"
+work=$(mktemp -d "$HOME/.cache/codex/r2ghidra/local-integration/run-XXXXXX")
+build="$work/build"
+mkdir -p "$work/tmp"
+export TMPDIR="$work/tmp"
+meson setup "$build" --wrap-mode=nodownload -Dghidra-native:tests=true
+meson compile -C "$build" -j 2 core_r2ghidra sleigh-DATA sleigh-x86 pcode-xml-test decompiler_test
+meson test -C "$build" ghidra-native-unittests patch-preparation pcode-xml --print-errorlogs
+meson compile -C "$build" -j 2 core_r2ghidra sleigh-DATA sleigh-x86 pcode-xml-test decompiler_test
 ```
 
-These are the tested bounded build targets: the native plugin, DATA/x86 language specifications, and the p-code XML test executable. This command does not build or validate every processor, and the separate `meson test` command actually runs the encoder test; compilation alone does not. Meson invokes the engine's existing patch runner; do not hand-edit its generated `src` tree or introduce a second engine pin. Make remains supported through the same wrap, but its subproject manager can stash and switch an existing checkout, so do not run it against an arbitrary source tree for this local procedure.
+These bounded targets build the native plugin, DATA/x86 language specifications, native regression driver and p-code XML test executable from the same prepared engine. This command does not build or validate every processor. The separate `meson test` command runs the native regressions, preparation controls (including real Sleigh compilation) and encoder test; compilation alone does not. The repeated build validates matching reuse after generated language outputs exist.
+
+Meson configuration and build reuse invoke the engine's shared preparation runner. `patch.done` records the ordered patch and prepared-source identities; matching prepared distributions need no Git. Stale, malformed or old empty markers, changed source inputs, and markerless dirty/partly prepared trees refuse without changing source bytes. Preserve changes and populate a new checkout or use a matching prepared distribution; never remove the marker and retry on that tree. Normal generated processor `.sla` files paired with `.slaspec` inputs do not invalidate preparation; specifications and includes remain checked. Do not hand-edit the prepared `src` tree or introduce a second engine pin. Make remains supported through the same wrap, but its subproject manager can stash and switch an existing checkout, so do not run it against an arbitrary source tree for this local procedure.
 
 No global installation is necessary. For an isolated Linux replay from the r2ghidra root, continue in the same shell so `$build` selects the fresh directory above. Disable automatic plugins, explicitly load that newly built plugin, and select its matching flat x86 language directory before the commands below:
 
