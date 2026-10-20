@@ -35,6 +35,12 @@ r2g_src_names = [
 ]
 
 r2g_python = find_program('python3', 'python', required: true)
+r2g_patch_runner = files('../subprojects/ghidra-native/scripts/apply_patches.py')
+r2g_preparation_check = custom_target('r2ghidra-check-patch-preparation',
+  output: 'r2ghidra-patch-checked.h',
+  command: [r2g_python, r2g_patch_runner, '--check', '@OUTPUT@'],
+  build_always_stale: true,
+  build_by_default: true)
 r2g_source_reader = files('../subprojects/ghidra-native/scripts/sources.py')
 import('fs').read('../subprojects/ghidra-native/sources.mk')
 r2g_dec_names = run_command(r2g_python, r2g_source_reader, 'GHIDRA_EMBEDDED_SRCS', check: true).stdout().strip().split()
@@ -45,7 +51,7 @@ r2g_zlib_names = [
   'inflate.c', 'inftrees.c', 'trees.c', 'uncompr.c', 'zutil.c',
 ]
 
-r2g_sources = []
+r2g_sources = [r2g_preparation_check]
 foreach n : r2g_src_names
   r2g_sources += ['../src/' + n]
 endforeach

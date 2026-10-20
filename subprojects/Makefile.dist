@@ -1,5 +1,8 @@
 # Distribution Makefile
-.PHONY: default
+.PHONY: default all ghidra-native
 
-default:
+default all: ghidra-native
 	@echo "Distribution tarball, nothing to download."
+
+ghidra-native:
+	$(MAKE) -C ghidra-native patch

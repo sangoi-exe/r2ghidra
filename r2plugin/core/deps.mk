@@ -54,6 +54,12 @@ R2GHIDRA_XPS_OBJS+=$(addprefix $(R2GHIDRA_XPS_OBD)/z_,$(R2GHIDRA_XPS_ZLIB_SRCS:.
 
 EXTERNAL_STATIC_OBJS+=$(R2GHIDRA_XPS_OBJS)
 
+.PHONY: r2ghidra-check-patch-preparation
+r2ghidra-check-patch-preparation:
+	$(MAKE) -C $(R2GHIDRA_XPS_WD)/subprojects/ghidra-native patch
+
+$(R2GHIDRA_XPS_OBJS): | r2ghidra-check-patch-preparation
+
 ifeq ($(shell uname),Darwin)
 LDFLAGS+=-lc++
 else
