@@ -6,7 +6,7 @@ The manual helper procedure below is a narrow, explicitly supplied analysis cont
 
 ## Build the matching local components
 
-`subprojects/ghidra-native.wrap` is the single engine URL/revision pin: Meson reads it directly, and `subprojects/ghidra-native.mk` derives its Make settings from it. It selects the `sangoi-exe/ghidra-native` fork at an exact engine commit, not upstream 0.7.2. The current pin is `636c9bcdc31246f729bde1a3e4301634c327d366`. Remote availability of this commit is distinct from validation of a fresh network-only build. A fresh network-only build of the current pin is not yet established. Do not replace the pin with an older engine merely to make a remote fetch succeed.
+`subprojects/ghidra-native.wrap` is the single engine URL/revision pin: Meson reads it directly, and `subprojects/ghidra-native.mk` derives its Make settings from it. It selects the `sangoi-exe/ghidra-native` fork at an exact engine commit, not upstream 0.7.2. The current pin is `3ee06068bc8e5c483bbb35a45a23b9f4eafadfa6`. The local procedure below can consume that exact committed revision without establishing its remote publication or acquisition. A fresh network-only build of the current pin is not yet established. Do not replace the pin with an older engine merely to make a remote fetch succeed.
 
 For the qualified local build, populate a fresh subproject from the matching local direct child. Run this from the r2ghidra repository root, with `./ghidra-native` pointing to that editable engine repository. In a disposable r2ghidra source copy, supply the matching local engine repository at that direct-child path first. The commands refuse an existing subproject path rather than switching or stashing someone else's checkout; use a fresh disposable r2ghidra source copy if that path is already occupied.
 
@@ -84,6 +84,21 @@ The bridge consumes the host's canonical structured function signature: address-
 For the automatically qualified pairs, no `tcc` definition or manual `afs` replacement is required. The core uses `borland_fmovmem_16far`, returns void and takes `source`, `destination`, `byte_count`; the wrapper uses `borland_fmemmove_16far`, returns `FarAddress16` and takes `destination`, `source`, `byte_count`. Inspect the full function/context XML before and after a rename-only operation: the selected model must remain locked, both four-byte records must occupy entry stack offsets 4 and 8, and the two-byte count must occupy offset 12. Incoming SS remains symbolic, not zero or a guessed selector.
 
 This automatic-consumption procedure establishes the pre-save native boundary. Legacy project command replay can reject convention names that have no host definition; that is distinct from command-free v8 project restoration and native MCP file-switch observations. The final cumulative continuation/project/MCP workflow still requires its matching-component production proof; this procedure alone does not supply it. Do not add fake host conventions to hide a persistence boundary.
+
+## Qualified TASM 3.1 flag/state contracts
+
+The matching engine provides these explicit models in both x86 16-bit Real and Protected Mode. The exact-image host TASM 3.1 profile supplies their structured signatures; the model names neither recognize a function automatically nor establish a historical or universal TASM C ABI. Use the host's qualified facts rather than replacing manual or conflicting analysis to force a model selection.
+
+| Native model | Host result and native output storage | Ordered register inputs |
+| --- | --- | --- |
+| `tasm31_sign_extension_state_16near` | `Tasm31SignExtensionState5`: five-byte CF/AX/DX state | AX, DX, DS, ES |
+| `tasm31_current_state_16near` | `Tasm31CurrentState2`: two-byte ZF/AL state | AL, DS |
+| `tasm31_padding_state_16near` | `Tasm31PaddingState5`: five-byte ZF/current DS/current ES state | DS, ES |
+| `tasm31_conditional_store_16far` | void; no manufactured AL result | DS |
+
+The three near models consume a two-byte return frame and purge no arguments; the supporting far leaf consumes a four-byte return frame and purges no arguments. These are finite normal-return contracts requiring valid selected memory, intact frames and noninterfering storage, not unrestricted CPU or memory-effect models. The current-state helper's optional qualified far leaf conditionally writes memory; neither helper is declared pure. The padding helper's six work descendants remain opaque: its output selectors are the then-current DS/ES, not a promise that entry selectors survived, and unproved AH/SI/BP/DI and segment/DF effects remain unknown rather than blanket-preserved or blanket-killed.
+
+With the matching host, plugin and compiled x86 specifications, inspect `pd:gd` for the exact locked model, result size and ordered register inputs, then `pd:gx` and the original caller instructions for actual CF/ZF consumption and current-selector dependencies. Storage layout alone does not prove flag computation, caller flow or complete callee effects. Native tests and pin selection alone do not establish that combined host-to-bridge runtime observation; qualify matching local components as above before making that claim.
 
 ## Qualified TLINK51 inline-call continuation
 
