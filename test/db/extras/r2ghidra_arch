@@ -413,7 +413,7 @@ FILE=bins/elf/ppc64v1-crc32_generic.ko
 ARGS=-e bin.relocs.apply=true
 CMDS=<<EOF
 aa
-afvt arg1 signed int64_t @ sym..crc32_init
+afvt arg1 signed long long @ sym..crc32_init
 pdg @ sym..crc32_init
 EOF
 EXPECT=<<EOF

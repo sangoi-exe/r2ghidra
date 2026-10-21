@@ -35,10 +35,13 @@ afvb -8 local Missing
 pdgj
 afvt local uint8_t[0]
 pdgj
+afvt local uint8_t[]
+pdgj
 EOF
 EXPECT=<<EOF
 {"errors":["Ghidra Decompiler Error: Failed to match type Missing for variable local: Unable to resolve type 'Missing'"]}
 {"errors":["Ghidra Decompiler Error: Failed to match type uint8_t[0] for variable local: Array bound must be positive"]}
+{"errors":["Ghidra Decompiler Error: Type uint8_t[] of variable local has size 0"]}
 EOF
 RUN
 
@@ -623,6 +626,163 @@ unknown
             <prototype model="__stdcall" extrapop="8" modellock="true">
 uint16_t partial(uint16_t arg1)
 fixed
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=aggregate return keeps model hidden storage with fixed unknown and unspecified source inputs
+FILE=hex://48c7070100000048c747080200000048c74710030000004889f8c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"td struct Big {uint64_t words[3];};"
+"afs Big large(void)"
+afc amd64
+tk func.large.prototype
+pdgd~hiddenretparm="true"~?
+pdgd~symbol name="rethidden"~typelock="true"~?
+pdgd~type name="" size="8" metatype="ptr"~?
+pdgd~typeref name="Big"~?
+pdgd~addr space="register" offset="0x38"~?
+pdg~words
+tk func.large.prototype=unknown
+tk func.large.prototype
+pdgd~hiddenretparm="true"~?
+pdgd~symbol name="rethidden"~typelock="true"~?
+pdgd~type name="" size="8" metatype="ptr"~?
+pdgd~typeref name="Big"~?
+pdgd~addr space="register" offset="0x38"~?
+pdg~words
+tk func.large.prototype=unspecified
+tk func.large.prototype
+pdgd~hiddenretparm="true"~?
+pdgd~symbol name="rethidden"~typelock="true"~?
+pdgd~type name="" size="8" metatype="ptr"~?
+pdgd~typeref name="Big"~?
+pdgd~addr space="register" offset="0x38"~?
+pdg~words
+EOF
+EXPECT=<<EOF
+fixed
+1
+1
+2
+2
+1
+    rethidden->words[0] = 1;
+    rethidden->words[1] = 2;
+    rethidden->words[2] = 3;
+unknown
+1
+0
+2
+2
+1
+    rethidden->words[0] = 1;
+    rethidden->words[1] = 2;
+    rethidden->words[2] = 3;
+unspecified
+1
+0
+2
+2
+1
+    rethidden->words[0] = 1;
+    rethidden->words[1] = 2;
+    rethidden->words[2] = 3;
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=return derived hidden input does not close recovery of a genuine RSI input
+FILE=hex://48893748c747080200000048c74710030000004889f8c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"td struct Big {uint64_t words[3];};"
+"afs Big large(void)"
+afc amd64
+tk func.large.prototype=unknown
+tk func.large.prototype
+pdgd~hiddenretparm="true"~?
+pdgd~symbol name="arg2"~typelock="true"~?
+pdgd~addr space="register" offset="0x30"~?
+pdg~large(
+pdg~words
+tk func.large.prototype=unspecified
+tk func.large.prototype
+pdgd~hiddenretparm="true"~?
+pdgd~symbol name="arg2"~typelock="true"~?
+pdgd~addr space="register" offset="0x30"~?
+pdg~large(
+pdg~words
+EOF
+EXPECT=<<EOF
+unknown
+1
+0
+1
+Big * large(Big *rethidden,int64_t arg2)
+    rethidden->words[0] = arg2;
+    rethidden->words[1] = 2;
+    rethidden->words[2] = 3;
+unspecified
+1
+0
+1
+Big * large(Big *rethidden,int64_t arg2,...)
+    rethidden->words[0] = arg2;
+    rethidden->words[1] = 2;
+    rethidden->words[2] = 3;
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=unspecified source writeback with inferred records remains an open named callback
+FILE=malloc://64
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+wx 89f8c3
+wx 4889f8bf2a000000ffd0c3 @ 0x10
+af+ 0 open_source
+afb+ 0 0 3
+e r2ghidra.lang=x86:LE:64:default:gcc
+"afs uint32_t open_source()"
+afc amd64
+pdgw
+afs
+tk func.open_source.prototype
+tk func.open_source.args
+tk func.open_source.arg.0
+s 0x10
+af+ 0x10 callback_owner
+afb+ 0x10 0x10 11
+"afs int callback_owner(uintptr_t callback)"
+afc amd64
+tk func.callback_owner.arg.0=func.open_source *,callback
+pdgd~metatype="code"~?
+pdg~callback_owner(
+pdg~0x2a
+tk func.open_source.prototype
+tk func.open_source.args
+tk func.open_source.arg.0
+EOF
+EXPECT=<<EOF
+uint32_t open_source (uint32_t arg1);
+unspecified
+1
+uint32_t,arg1
+1
+int callback_owner(uint32_t (*callback)())
+    uVar1 = (*callback)(0x2a);
+unspecified
+1
+uint32_t,arg1
 EOF
 EXPECT_ERR=<<EOF
 EOF

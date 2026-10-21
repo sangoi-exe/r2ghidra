@@ -597,11 +597,8 @@ Datatype *R2TypeFactory::queryR2Function(const string &n, TypeResolution &resolu
 		failTypeConstruction ("Unavailable parameter-list knowledge for function type " + n);
 	}
 	int arg_count = 0;
-	if (!countargs (sdb, n.c_str (), &arg_count)) {
+	if (prototype == R_TYPE_FUNC_PROTOTYPE_FIXED && !countargs (sdb, n.c_str (), &arg_count)) {
 		failTypeConstruction ("Unavailable parameter count for function type " + n);
-	}
-	if (prototype == R_TYPE_FUNC_PROTOTYPE_UNSPECIFIED && arg_count) {
-		failTypeConstruction ("Unrepresentable unspecified function type " + n);
 	}
 	if (!ret) {
 		failTypeConstruction ("Missing return type for function type " + n);

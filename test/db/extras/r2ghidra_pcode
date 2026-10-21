@@ -235,24 +235,18 @@ afc borland_fmovmem_16far
 pdgx~addr space="stack" offset="0x4" size="4"~input="true"~?
 pdgx~addr space="stack" offset="0x8" size="4"~input="true"~?
 pdgx~addr space="stack" offset="0xc" size="2"~input="true"~?
-pdg~segmentop~!Stack_
+pdg~segmentop,source.selector~!Stack_
 EOF
 EXPECT=<<EOF
 1
 1
 1
-    if ((*segmentop(unaff_SS,&destination.selector) < *segmentop(unaff_SS,&source.selector)) ||
-       ((*segmentop(unaff_SS,&destination.selector) <= *segmentop(unaff_SS,&source.selector) &&
-        (segmentop(unaff_SS,&destination)->offset <= segmentop(unaff_SS,&source)->offset)))) {
-    WVar13 = (*segmentop(unaff_SS,&source)).selector;
-    puVar8 = (*segmentop(unaff_SS,&source)).offset;
-    WVar12 = (*segmentop(unaff_SS,&destination)).selector;
-    puVar10 = (*segmentop(unaff_SS,&destination)).offset;
-    uVar6 = *segmentop(unaff_SS,&byte_count);
-        puVar3 = segmentop(WVar12,puVar10);
-        puVar1 = segmentop(WVar13,puVar8);
-        puVar4 = segmentop(WVar12,puVar11);
-        puVar2 = segmentop(WVar13,puVar9);
-        *segmentop(WVar12,puVar11 + iVar5) = *segmentop(WVar13,puVar9 + iVar5);
+    if ((destination.selector < source.selector) ||
+       ((destination.selector <= source.selector && (destination.offset <= source.offset)))) {
+        puVar3 = segmentop(destination.selector,destination.offset);
+        puVar1 = segmentop(source.selector,source.offset);
+        puVar4 = segmentop(destination.selector,puVar8);
+        puVar2 = segmentop(source.selector,puVar7);
+        *segmentop(destination.selector,puVar8 + iVar5) = *segmentop(source.selector,puVar7 + iVar5);
 EOF
 RUN

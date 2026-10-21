@@ -181,8 +181,7 @@ struct FunctionVars {
 			type = arch->types->getBase (default_size, TYPE_UNKNOWN);
 		}
 		if (type && type->getSize () < 1) {
-			arch->addWarning ("Type " + type->getName () + " of variable " + to_string (var->name) + " has size 0");
-			return nullptr;
+			throw LowlevelError ("Type " + to_string (var->type) + " of variable " + to_string (var->name) + " has size 0");
 		}
 		return type;
 	}
@@ -728,6 +727,12 @@ FunctionSymbol *R2Scope::registerFunction(RAnalFunction *fcn) const {
 					}
 					nativeProto.setOutput (signatureStorage.front ());
 					nativeProto.setOutputLock (true);
+					for (size_t i = 1; i < signatureStorage.size (); i++) {
+						const auto &piece = signatureStorage[i];
+						if (piece.flags & ParameterPieces::hiddenretparm) {
+							nativeProto.setParam (static_cast<int4>(i - 1), "rethidden", piece);
+						}
+					}
 				}
 				if (recordedParams) {
 					ScopeLocal *localScope = fd->getScopeLocal ();
