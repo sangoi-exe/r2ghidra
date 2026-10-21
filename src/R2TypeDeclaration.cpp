@@ -188,17 +188,14 @@ RTypeDecl *R2TypeFactory::toDeclaration(Datatype *type, int depth) const {
 		}
 		node->kind = R_TYPE_DECL_FUNCTION;
 		node->function.parameters = r_list_newf (reinterpret_cast<RListFree> (r_type_decl_free));
-		// Native C printing uses a no-fixed-argument vararg prototype for ().
-		node->function.prototype = !proto->isDotdotdot () || proto->numParams () > 0;
-		node->function.variadic = proto->isDotdotdot () && proto->numParams () > 0;
-		Declaration child (toDeclaration (proto->getOutputType (), depth + 1), r_type_decl_free);
-		if (!child) {
-			return nullptr;
-		}
-		node->child = child->type;
-		child->type = nullptr;
+		Datatype *returnType = proto->getOutputType ();
 		for (int4 i = 0; i < proto->numParams (); i++) {
 			ProtoParameter *param = proto->getParam (i);
+			if (param->isHiddenReturn ()) {
+				// Hidden return storage points to the logical result, not a source argument.
+				returnType = static_cast<TypePointer *>(param->getType ())->getPtrTo ();
+				continue;
+			}
 			Declaration parameter (toDeclaration (param->getType (), depth + 1), r_type_decl_free);
 			if (!parameter) {
 				return nullptr;
@@ -211,6 +208,16 @@ RTypeDecl *R2TypeFactory::toDeclaration(Datatype *type, int depth) const {
 			}
 			parameter.release ();
 		}
+		// Native C printing uses a no-fixed-argument vararg prototype for ().
+		const bool haveParameters = !r_list_empty (node->function.parameters);
+		node->function.prototype = !proto->isDotdotdot () || haveParameters;
+		node->function.variadic = proto->isDotdotdot () && haveParameters;
+		Declaration child (toDeclaration (returnType, depth + 1), r_type_decl_free);
+		if (!child) {
+			return nullptr;
+		}
+		node->child = child->type;
+		child->type = nullptr;
 		break;
 	}
 	case TYPE_UNKNOWN:

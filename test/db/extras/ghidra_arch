@@ -112,14 +112,14 @@ x86:LE:16:Real Mode:
 //WARNING: Variable defined which should be unmapped: var_8h
 //WARNING: Variable defined which should be unmapped: var_4h
 
-uint fcn.00001c98(ushort noname_0,ushort noname_1,int16_t arg_ah,int16_t noname_3,int16_t arg_eh)
+ulong fcn.00001c98(uint noname_0,uint noname_1,int16_t arg_ah,int noname_3,int16_t arg_eh)
 
 {
-    int16_t *piVar1;
-    ushort unaff_CS;
-    ushort unaff_DS;
-    uint uVar2;
-    int16_t in_stack_0000000c;
+    int far *piVar1;
+    uint unaff_CS;
+    uint unaff_DS;
+    ulong uVar2;
+    int in_stack_0000000c;
     int16_t var_8h;
     int16_t var_6h;
     int16_t var_4h;
@@ -138,24 +138,24 @@ uint fcn.00001c98(ushort noname_0,ushort noname_1,int16_t arg_ah,int16_t noname_
                 cStack_4 = '\n';
             }
             if (_var_2h < in_stack_0000000c) {
-                *(noname_3 + _var_2h) = cStack_4;
+                *segmentop(arg_eh,noname_3 + _var_2h) = cStack_4;
                 _var_2h = _var_2h + 1;
             }
         } while (cStack_4 != '\n');
-        piVar1 = 0x4022;
+        piVar1 = segmentop(unaff_DS,0x4022);
         *piVar1 = *piVar1 + -1;
         if (*piVar1 < 0) {
             func_0x0000e4ae(0xdee,10,0x401e);
         }
         else {
-            **0x401e = 10;
-            *0x401e = *0x401e + 1;
+            **segmentop(unaff_DS,0x401e) = 10;
+            *segmentop(unaff_DS,0x401e) = *segmentop(unaff_DS,0x401e) + 1;
         }
         unaff_CS = 0xdee;
         func_0x0000e59a(0xdee,0x401e);
         var_6h = 0x13db;
-    } while (*(noname_3 + _var_2h + -1) != '\n');
-    *(noname_3 + _var_2h + -1) = 0;
+    } while (*segmentop(arg_eh,noname_3 + _var_2h + -1) != '\n');
+    *segmentop(arg_eh,noname_3 + _var_2h + -1) = 0;
     return uVar2;
 }
 
