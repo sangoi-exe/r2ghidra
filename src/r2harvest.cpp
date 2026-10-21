@@ -143,7 +143,6 @@ void HarvestFuncdata(R2Architecture &arch, Funcdata *func, Harvest &out) {
 	}
 	std::vector<bool> paramsMatch (proto.numParams (), false);
 	out.proto.valid = PrototypeStorageMatches (arch, proto, paramsMatch);
-	out.proto.dotdotdot = proto.isDotdotdot ();
 	out.proto.noreturn = proto.isNoReturn ();
 	out.proto.retType = arch.getTypeFactory ()->toCString (proto.getOutputType ());
 	for (int4 i = 0; i < proto.numParams (); i++) {
@@ -212,7 +211,7 @@ static bool DeclarationKnown(RAnal *anal, const RTypeDeclNode *node) {
 }
 
 static bool TypeParseable(RAnal *anal, const std::string &type, bool returnType = false) {
-	RTypeDecl *decl = r_type_decl_parse (type.c_str (), nullptr);
+	RTypeDecl *decl = r_type_decl_parse (type.c_str (), R_TYPE_DECL_CONTEXT_ABSTRACT, nullptr);
 	const bool valid = decl && (!returnType || (decl->type->kind != R_TYPE_DECL_ARRAY && decl->type->kind != R_TYPE_DECL_FUNCTION)) && DeclarationKnown (anal, decl->type);
 	r_type_decl_free (decl);
 	return valid;
@@ -285,7 +284,16 @@ static void param_free(void *p) {
 
 static bool WriteSignature(RCore *core, RAnalFunction *fcn, const Harvest &h) {
 	RAnalFunctionSignature *cur = r_anal_function_get_signature (fcn);
-	const char *curRet = (cur && R_STR_ISNOTEMPTY (cur->ret_type)) ? cur->ret_type : NULL;
+	if (!cur) {
+		R_LOG_WARN ("pdgw: cannot read current function signature");
+		return false;
+	}
+	if (cur->prototype == R_TYPE_FUNC_PROTOTYPE_FIXED && cur->origin == R_ANAL_FUNCTION_SIGNATURE_ORIGIN_VARIABLES) {
+		// Inferred records cannot supply an unavailable fixed parameter list.
+		r_anal_function_signature_free (cur);
+		return false;
+	}
+	const char *curRet = R_STR_ISNOTEMPTY (cur->ret_type) ? cur->ret_type : NULL;
 	std::string ret = h.proto.retType;
 	if (ret.empty () || !TypeParseable (core->anal, ret, true)) {
 		ret = curRet ? curRet : "void";
@@ -294,6 +302,7 @@ static bool WriteSignature(RCore *core, RAnalFunction *fcn, const Harvest &h) {
 		ret = curRet;
 	}
 	RAnalFunctionSignature sig = {};
+	sig.prototype = cur->prototype;
 	sig.ret_type = (char *)ret.c_str ();
 	sig.callconv = (char *)fcn->callconv;
 	sig.noreturn = h.proto.noreturn || fcn->is_noreturn;
@@ -316,13 +325,21 @@ static bool WriteSignature(RCore *core, RAnalFunction *fcn, const Harvest &h) {
 		r_list_append (sig.params, fp);
 		idx++;
 	}
-	if (complete && h.proto.dotdotdot) {
+	bool explicitVariadic = false;
+	for (RListIter *it = cur->params->head; it; it = it->n) {
+		auto param = static_cast<const RAnalFunctionParam *>(it->data);
+		if (r_type_arg_is_vararg (param->type, param->name)) {
+			explicitVariadic = true;
+			break;
+		}
+	}
+	if (complete && explicitVariadic) {
 		RAnalFunctionParam *fp = R_NEW0 (RAnalFunctionParam);
 		fp->type = strdup ("...");
 		r_list_append (sig.params, fp);
 	}
-	bool changed = !cur;
-	if (complete && cur) {
+	bool changed = false;
+	if (complete) {
 		changed = !cur->ret_type || ret != cur->ret_type
 			|| r_list_length (cur->params) != r_list_length (sig.params);
 		for (int i = 0; !changed && i < r_list_length (sig.params); i++) {

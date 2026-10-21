@@ -592,20 +592,29 @@ Datatype *R2TypeFactory::queryR2Function(const string &n, TypeResolution &resolu
 	Sdb *sdb = core->anal->sdb_types;
 
 	const char *ret = r_type_func_ret(sdb, n.c_str());
+	RTypeFunctionPrototype prototype;
+	if (!r_type_func_get_prototype (sdb, n.c_str (), &prototype) || prototype == R_TYPE_FUNC_PROTOTYPE_UNKNOWN) {
+		failTypeConstruction ("Unavailable parameter-list knowledge for function type " + n);
+	}
 	int arg_count = 0;
-	countargs(sdb, n.c_str(), &arg_count);
-	if (!ret && arg_count <= 0) {
-		return nullptr;
+	if (!countargs (sdb, n.c_str (), &arg_count)) {
+		failTypeConstruction ("Unavailable parameter count for function type " + n);
+	}
+	if (prototype == R_TYPE_FUNC_PROTOTYPE_UNSPECIFIED && arg_count) {
+		failTypeConstruction ("Unrepresentable unspecified function type " + n);
+	}
+	if (!ret) {
+		failTypeConstruction ("Missing return type for function type " + n);
 	}
 
 	PrototypePieces proto;
 	if (!arch->defaultfp) {
-		return getTypeCode();
+		failTypeConstruction ("Missing prototype model for function type " + n);
 	}
 	proto.model = arch->defaultfp;
 	proto.name = n;
-	proto.firstVarArgSlot = -1;
-	proto.outtype = ret ? fromCStringResolved(ret, nullptr, resolution) : getTypeVoid();
+	proto.firstVarArgSlot = prototype == R_TYPE_FUNC_PROTOTYPE_UNSPECIFIED ? 0 : -1;
+	proto.outtype = fromCStringResolved (ret, nullptr, resolution);
 	if (proto.outtype && (proto.outtype->getMetatype () == TYPE_CODE || proto.outtype->getMetatype () == TYPE_ARRAY)) {
 		failTypeConstruction ("Invalid function return type in " + n);
 	}
@@ -633,7 +642,7 @@ Datatype *R2TypeFactory::queryR2Function(const string &n, TypeResolution &resolu
 			failTypeConstruction ("Function parameter requires an explicit pointer in " + n);
 		}
 		if (!arg) {
-			arg = getBase(1, TYPE_UNKNOWN);
+			failTypeConstruction ("Missing parameter type in " + n);
 		}
 		proto.intypes.push_back(arg);
 		proto.innames.push_back(arg_name ? arg_name : "");
@@ -807,7 +816,7 @@ Datatype *R2TypeFactory::fromCStringResolved(const string &str, string *error, T
 		return entry.type;
 	}
 	char *parseError = nullptr;
-	std::unique_ptr<RTypeDecl, decltype(&r_type_decl_free)> decl (r_type_decl_parse (key.c_str (), &parseError), r_type_decl_free);
+	std::unique_ptr<RTypeDecl, decltype(&r_type_decl_free)> decl (r_type_decl_parse (key.c_str (), R_TYPE_DECL_CONTEXT_ABSTRACT, &parseError), r_type_decl_free);
 	if (!decl) {
 		if (error) {
 			*error = parseError ? parseError : "Invalid type declaration";

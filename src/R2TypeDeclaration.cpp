@@ -7,7 +7,6 @@
 #include <fspec.hh>
 #include <r_core.h>
 
-#include <cerrno>
 #include <climits>
 #include <cstdlib>
 #include <memory>
@@ -112,18 +111,27 @@ Datatype *R2TypeFactory::fromDeclaration(const RTypeDeclNode *node, string *erro
 		return pointee ? getTypePointer (size, pointee, arch->getDefaultDataSpace ()->getWordSize ()) : nullptr;
 	}
 	case R_TYPE_DECL_ARRAY: {
-		errno = 0;
-		char *end = nullptr;
-		const long count = strtol (node->array.count, &end, 10);
-		const bool validCount = end != node->array.count && !*end && errno != ERANGE && count > 0 && count <= INT_MAX;
+		const RTypeIntegerModel model = {
+			static_cast<unsigned int>(getSizeOfInt () * 8),
+			static_cast<unsigned int>(getSizeOfLong () * 8),
+			static_cast<unsigned int>(getSizeOfLongLong () * 8)
+		};
+		ut64 count = 0;
+		const char *boundError = nullptr;
+		if (!r_type_array_bound (&model, node->array.count, &count, &boundError)) {
+			if (error) {
+				*error = boundError ? boundError : "Invalid array bound";
+			}
+			return nullptr;
+		}
 		Datatype *element = fromDeclaration (node->child, error, resolution, false, depth + 1);
-		if (!validCount || !element || element->isIncomplete () || element->getMetatype () == TYPE_CODE || element->getMetatype () == TYPE_VOID || element->getAlignSize () < 1 || count > INT_MAX / element->getAlignSize ()) {
+		if (count > INT_MAX || !element || element->isIncomplete () || element->getMetatype () == TYPE_CODE || element->getMetatype () == TYPE_VOID || element->getAlignSize () < 1 || count > static_cast<ut64>(INT_MAX / element->getAlignSize ())) {
 			if (error) {
 				*error = "Invalid or oversized array type";
 			}
 			return nullptr;
 		}
-		return getTypeArray (count, element);
+		return getTypeArray (static_cast<int4>(count), element);
 	}
 	case R_TYPE_DECL_FUNCTION: {
 		if (!arch->defaultfp) {
@@ -199,7 +207,7 @@ RTypeDecl *R2TypeFactory::toDeclaration(Datatype *type, int depth) const {
 	case TYPE_ARRAY: {
 		auto array = static_cast<TypeArray *>(type);
 		node->kind = R_TYPE_DECL_ARRAY;
-		node->array.count = strdup (std::to_string (array->numElements ()).c_str ());
+		node->array.count = strdup (array->numElements () ? std::to_string (array->numElements ()).c_str () : "");
 		Declaration child (toDeclaration (array->getBase (), depth + 1), r_type_decl_free);
 		if (!child) {
 			return nullptr;

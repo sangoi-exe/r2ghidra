@@ -22,7 +22,6 @@ struct HarvestVar {
 struct HarvestProto {
 	bool valid = false;
 	std::string retType; // "" = keep the current return type
-	bool dotdotdot = false;
 	bool noreturn = false;
 	std::vector<HarvestVar> params;
 };

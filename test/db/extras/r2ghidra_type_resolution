@@ -20,7 +20,7 @@ EOF
 EXPECT=<<EOF
 {"errors":["Ghidra Decompiler Error: Failed to match arg type Missing for function declared: Unable to resolve type 'Missing'"]}
 {"errors":["Ghidra Decompiler Error: Failed to match return type Missing for function declared: Unable to resolve type 'Missing'"]}
-{"errors":["Ghidra Decompiler Error: Failed to match arg type uint8_t[0] for function declared: Invalid or oversized array type"]}
+{"errors":["Ghidra Decompiler Error: Failed to match arg type uint8_t[0] for function declared: Array bound must be positive"]}
 int32_t declared(int32_t value)
 EOF
 RUN
@@ -38,7 +38,7 @@ pdgj
 EOF
 EXPECT=<<EOF
 {"errors":["Ghidra Decompiler Error: Failed to match type Missing for variable local: Unable to resolve type 'Missing'"]}
-{"errors":["Ghidra Decompiler Error: Failed to match type uint8_t[0] for variable local: Invalid or oversized array type"]}
+{"errors":["Ghidra Decompiler Error: Failed to match type uint8_t[0] for variable local: Array bound must be positive"]}
 EOF
 RUN
 
@@ -51,6 +51,7 @@ e r2ghidra.lang=x86:LE:64:default:gcc
 "afs int32_t callback_owner(int32_t value)"
 afc amd64
 tk Callback=func
+tk func.Callback.prototype=fixed
 tk func.Callback.args=1
 tk func.Callback.arg.0=int32_t,value
 tk func.Callback.ret=Missing
@@ -261,5 +262,368 @@ EXPECT=<<EOF
     <def name="BAA" id="0xc000feab85e94141">
 1
     return p->p[1].value;
+EOF
+RUN
+
+NAME=shared array expressions normalize equivalent literals and C precedence
+FILE=hex://c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"afs void literals(uint8_t (*decimal)[8], uint8_t (*octal)[010], uint8_t (*hexadecimal)[0x8], uint8_t (*precedence)[1|2+3])"
+afc amd64
+afs
+pdgd~arraysize=
+pdg~literals(
+pdgw
+afs
+pdgd~arraysize=
+EOF
+EXPECT=<<EOF
+void literals (uint8_t (*decimal)[8], uint8_t (*octal)[010], uint8_t (*hexadecimal)[0x8], uint8_t (*precedence)[1|2+3]);
+                        <type name="" size="8" metatype="array" arraysize="8">
+                        <type name="" size="8" metatype="array" arraysize="8">
+                        <type name="" size="8" metatype="array" arraysize="8">
+                        <type name="" size="5" metatype="array" arraysize="5">
+void literals(uint8_t (*decimal) [8],uint8_t (*octal) [8],uint8_t (*hexadecimal) [8],uint8_t (*precedence) [5])
+void literals (uint8_t (*decimal)[8], uint8_t (*octal)[8], uint8_t (*hexadecimal)[8], uint8_t (*precedence)[5]);
+                        <type name="" size="8" metatype="array" arraysize="8">
+                        <type name="" size="8" metatype="array" arraysize="8">
+                        <type name="" size="8" metatype="array" arraysize="8">
+                        <type name="" size="5" metatype="array" arraysize="5">
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=octal typedef and direct nested arrays preserve the marker layout discriminator
+FILE=hex://0fb64710c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"td typedef uint8_t Row[010]; struct Grid {Row rows[2]; uint8_t marker;};"
+tk typedef.Row
+tk struct.Grid.marker
+"afs uint8_t read_grid(Grid *grid)"
+afc amd64
+pdgd~type name="Grid"
+pdgd~arraysize=
+pdg~return
+pdgw
+afs
+pdgd~type name="Grid"
+pdg~return
+"td struct Direct {uint8_t rows[2][0x8]; uint8_t marker;};"
+"afs uint8_t read_direct(Direct *grid)"
+afc amd64
+pdgd~type name="Direct"
+pdgd~arraysize=
+pdg~return
+EOF
+EXPECT=<<EOF
+uint8_t [010]
+uint8_t,16,0
+    <type name="Grid" id="0xc000fed0477297cf" size="17" metatype="struct" alignment="1">
+        <type name="" size="16" metatype="array" arraysize="2">
+    return grid->marker;
+uint8_t read_grid (Grid *grid);
+    <type name="Grid" id="0xc000fed0477297cf" size="17" metatype="struct" alignment="1">
+    return grid->marker;
+    <type name="Direct" id="0xeb7b449727ce9ad9" size="17" metatype="struct" alignment="1">
+        <type name="" size="16" metatype="array" arraysize="2">
+        <type name="" size="16" metatype="array" arraysize="2">
+          <type name="" size="8" metatype="array" arraysize="8">
+    return grid->marker;
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=native sixteen bit widths govern expressions and near far pointer array strides
+FILE=hex://cb
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+af+ 0 width
+afb+ 0 0 1
+e r2ghidra.lang=x86:LE:16:Protected Mode
+"afs void width(uint8_t (*values)[0xffff+2], uint16_t near *(near *nearrows)[010], uint16_t far *(near *farrows)[0x8])"
+tcc ax __cdecl16far(stack)
+afc __cdecl16far
+afs
+pdgd~arraysize=
+pdg~width(
+pdgw
+afs
+pdgd~arraysize=
+EOF
+EXPECT=<<EOF
+void width (uint8_t (*values)[0xffff+2], uint16_t near *(near *nearrows)[010], uint16_t far *(near *farrows)[0x8]);
+                        <type name="" size="32" metatype="array" arraysize="8">
+                        <type name="" size="16" metatype="array" arraysize="8">
+                        <type name="" size="1" metatype="array" arraysize="1">
+width(uint8_t (near *values) [1],uint16_t near *(near *nearrows) [8],uint16_t far *(near *farrows) [8])
+void width (uint8_t (near *values)[1], uint16_t near *(near *nearrows)[8], uint16_t far *(near *farrows)[8]);
+                        <type name="" size="32" metatype="array" arraysize="8">
+                        <type name="" size="16" metatype="array" arraysize="8">
+                        <type name="" size="1" metatype="array" arraysize="1">
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=native sixty four bit model keeps the wider signed integer expression
+FILE=hex://c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"afs void width(uint8_t (*values)[0xffff+2])"
+afc amd64
+pdgd~arraysize=
+pdg~width(
+pdgw
+afs
+pdgd~arraysize=
+EOF
+EXPECT=<<EOF
+                        <type name="" size="65537" metatype="array" arraysize="65537">
+void width(uint8_t (*values) [65537])
+void width (uint8_t (*values)[65537]);
+                        <type name="" size="65537" metatype="array" arraysize="65537">
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=flexible tail retains its complete prefix zero extent and unsized writeback
+FILE=hex://488d4702c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"td struct Packet {uint16_t length; uint8_t payload[];};"
+tk type.Packet.size
+tk struct.Packet.payload
+"afs uint8_t (*packet_tail(Packet *packet))[]"
+afc amd64
+pdgd~:2..14
+pdgd~arraysize=
+pdg~packet_tail(
+pdgw
+afs
+tsc Packet
+pdgd~:2..14
+pdgd~arraysize=
+pdgw
+afs
+EOF
+EXPECT=<<EOF
+16
+uint8_t [],2,0
+  <typegrp>
+    <type name="Packet" id="0xeb85fb619dc098d9" size="2" metatype="struct" alignment="2">
+      <field name="length" offset="0">
+        <typeref name="uint16_t" id="0xe03cc574cf9d5ff9"/>
+      </field>
+      <field name="payload" offset="2">
+        <type name="" size="0" metatype="array" arraysize="0">
+          <typeref name="uint8_t" id="0xc520c290df38a1df"/>
+        </type>
+      </field>
+    </type>
+  </typegrp>
+        <type name="" size="0" metatype="array" arraysize="0">
+                  <type name="" size="0" metatype="array" arraysize="0">
+uint8_t (* packet_tail(Packet *packet)) []
+uint8_t (*packet_tail (Packet *packet))[];
+struct Packet {
+  uint16_t length;
+  uint8_t payload[];
+};
+  <typegrp>
+    <type name="Packet" id="0xeb85fb619dc098d9" size="2" metatype="struct" alignment="2">
+      <field name="length" offset="0">
+        <typeref name="uint16_t" id="0xe03cc574cf9d5ff9"/>
+      </field>
+      <field name="payload" offset="2">
+        <type name="" size="0" metatype="array" arraysize="0">
+          <typeref name="uint8_t" id="0xc520c290df38a1df"/>
+        </type>
+      </field>
+    </type>
+  </typegrp>
+        <type name="" size="0" metatype="array" arraysize="0">
+                  <type name="" size="0" metatype="array" arraysize="0">
+uint8_t (*packet_tail (Packet *packet))[];
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=c2 opaque struct and union headers retain distinct identities without by value layouts
+FILE=hex://c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"td struct HeaderS; union HeaderU; typedef struct HeaderS SA; typedef union HeaderU UA; void opaque_header(SA *s, UA *u);"
+afn opaque_header
+afc amd64
+pdgd~type name="HeaderS"
+pdgd~type name="HeaderU"
+pdgd~field name=~?
+pdg~opaque_header(
+"td struct IncompleteByValue {struct HeaderS value;};"
+tk~^IncompleteByValue=~?
+"td union IncompleteUnion {union HeaderU value;};"
+tk~^IncompleteUnion=~?
+pdgd~field name=~?
+EOF
+EXPECT=<<EOF
+    <type name="HeaderS" id="0xc51dce619a332555" size="0" metatype="struct" alignment="1"/>
+    <type name="HeaderU" id="0xc51dce619a3322ab" size="0" metatype="union" alignment="1"/>
+0
+void opaque_header(SA *s,UA *u)
+0
+0
+0
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=actual function source knowledge distinguishes empty open fixed and explicit variadic inputs
+FILE=hex://c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"afs int actual_open()"
+afc amd64
+pdgd~dotdotdot="true"~?
+pdgd~voidlock="true"~?
+pdg~actual_open(
+pdgw
+afs
+tk func.actual_open.prototype
+"afs int actual_fixed(void)"
+afc amd64
+pdgd~dotdotdot="true"~?
+pdgd~voidlock="true"~?
+pdg~actual_fixed(
+pdgw
+afs
+tk func.actual_fixed.prototype
+"afs int actual_variadic(int fixed, ...)"
+afc amd64
+pdg~actual_variadic(
+pdgw
+afs
+tk func.actual_variadic.prototype
+tk func.actual_variadic.args
+pdgw
+EOF
+EXPECT=<<EOF
+1
+0
+int actual_open()
+int actual_open ();
+unspecified
+0
+1
+int actual_fixed(void)
+int actual_fixed (void);
+fixed
+int actual_variadic(int fixed,...)
+int actual_variadic (int fixed, ...);
+fixed
+2
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=c2 named callbacks distinguish open from fixed zero and reject unavailable facts
+FILE=malloc://64
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+wx 4889f8bf2a000000ff10c3
+wx 4889f8bf2a000000ff5008c3 @ 0x10
+af+ 0 call_open
+afb+ 0 0 11
+af+ 0x10 call_fixed
+afb+ 0x10 0x10 12
+e r2ghidra.lang=x86:LE:64:default:gcc
+"td typedef int (*Open)(); typedef int (*Fixed)(void); struct Slots {Open open; Fixed fixed;};"
+tk func.Open.prototype
+tk func.Fixed.prototype
+s 0
+"afs int call_open(Slots *slots)"
+afc amd64
+pdg~slots->
+s 0x10
+"afs int call_fixed(Slots *slots)"
+afc amd64
+pdg~slots->
+tk func.Open.prototype=unknown
+pdgj
+tk func.Open.prototype=fixed
+tk func.Open.args=
+pdgj
+EOF
+EXPECT=<<EOF
+unspecified
+fixed
+    iVar1 = (*slots->open)(0x2a);
+    iVar1 = (*slots->fixed)();
+{"errors":["Ghidra Decompiler Error: Unavailable parameter-list knowledge for function type Open"]}
+{"errors":["Ghidra Decompiler Error: Unavailable parameter count for function type Open"]}
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=known returns survive unavailable input knowledge without manufacturing fixed zero
+FILE=hex://4889f8c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"afs uint16_t hinted(void)"
+afc amd64
+tk func.hinted.prototype=unknown
+pdgd~prototype model=
+pdg~hinted(
+pdgw
+tk func.hinted.prototype
+tk func.hinted.args
+afs
+pdgw
+tk func.hinted.prototype
+tk func.hinted.args
+"afs uint16_t partial(void)"
+afc amd64
+tk func.partial.args=
+pdgd~prototype model=
+pdg~partial(
+pdgw
+tk func.partial.prototype
+tk func.partial.args
+EOF
+EXPECT=<<EOF
+            <prototype model="__stdcall" extrapop="8" modellock="true">
+uint16_t hinted(uint16_t param_1)
+unknown
+1
+uint16_t hinted (uint16_t arg1);
+unknown
+1
+            <prototype model="__stdcall" extrapop="8" modellock="true">
+uint16_t partial(uint16_t arg1)
+fixed
+EOF
+EXPECT_ERR=<<EOF
 EOF
 RUN

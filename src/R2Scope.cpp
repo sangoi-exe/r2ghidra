@@ -12,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <funcdata.hh>
+#include <varmap.hh>
 
 #include <r_version.h>
 #include <r_anal.h>
@@ -309,7 +310,7 @@ struct FunctionVars {
 		}
 		return symbolElement;
 	}
-	void emit(Element *symbollistElement, bool used_sig_args, const std::function<void(Element *)> &childRegRange) {
+	void emit(Element *symbollistElement, bool used_sig_args, bool inputHintsOnly, std::vector<ParameterPieces> &inputHints, const std::function<void(Element *)> &childRegRange) {
 		std::vector<Element *> argsByIndex;
 		foreachVar ([&](RAnalVar *var) {
 			if (used_sig_args && var->isarg) {
@@ -354,9 +355,13 @@ struct FunctionVars {
 			}
 			ranges.insertRange (sa.getSpace (), sa.getOffset (), last);
 
+			const bool recommendInput = var->isarg && inputHintsOnly;
 			Element *symbolElement = emitSymbol (symbollistElement, var->name, type, sa,
-				typelock ? "true" : "false", var->isarg ? "0" : "-1", index,
+				typelock && !recommendInput ? "true" : "false", var->isarg && !recommendInput ? "0" : "-1", recommendInput ? -1 : index,
 				var->isarg && var->kind == R_ANAL_VAR_KIND_REG, childRegRange);
+			if (recommendInput) {
+				inputHints.push_back ({sa, type, 0});
+			}
 			if (var->isarg) {
 				if (argsByIndex.size () < index + 1) {
 					argsByIndex.resize (index + 1, nullptr);
@@ -364,7 +369,9 @@ struct FunctionVars {
 				argsByIndex[index] = symbolElement;
 			}
 		});
-		emitPlaceholders (symbollistElement, argsByIndex, childRegRange);
+		if (!inputHintsOnly) {
+			emitPlaceholders (symbollistElement, argsByIndex, childRegRange);
+		}
 	}
 	void emitPlaceholders(Element *symbollistElement, const std::vector<Element *> &argsByIndex,
 			const std::function<void(Element *)> &childRegRange) {
@@ -405,7 +412,7 @@ static Datatype *resolveFunctionSignatureReturnType(R2Architecture *arch, const 
 	return type;
 }
 
-// Import authoritative typed prototypes; variable-derived signatures remain on FunctionVars.
+// Import recorded parameter types; specificity independently controls input locking.
 static void processFunctionSignature(
 	R2Architecture *arch,
 	const RAnalFunctionSignature *signature,
@@ -418,6 +425,7 @@ static void processFunctionSignature(
 	bool &used_sig_args,
 	bool &have_sig_proto,
 	PrototypePieces &sig_proto,
+	std::vector<ParameterPieces> &signatureStorage,
 	std::function<void(Element *)> childRegRange)
 {
 	std::vector<SigArg> sig_args;
@@ -454,23 +462,22 @@ static void processFunctionSignature(
 		protoPieces.intypes.push_back (arg.type);
 		protoPieces.innames.push_back (arg.name);
 	}
-	have_sig_proto = true;
+	const bool fixedInputs = signature->prototype == R_TYPE_FUNC_PROTOTYPE_FIXED;
+	have_sig_proto = fixedInputs;
 	sig_proto = protoPieces;
-
-	std::vector<ParameterPieces> pieces;
 	try {
-		proto->assignParameterStorage (protoPieces, pieces, true);
+		proto->assignParameterStorage (protoPieces, signatureStorage, true);
 	} catch (const LowlevelError &err) {
 		arch->addWarning ("Failed to assign parameter storage for " + to_string (fcn_name) + ": " + err.explain);
-		pieces.clear ();
+		signatureStorage.clear ();
 	}
 
-	used_sig_args = !pieces.empty ();
+	used_sig_args = fixedInputs && !signatureStorage.empty ();
 
-	if (used_sig_args) {
+	if (!signatureStorage.empty ()) {
 		size_t sig_index = 0;
-		for (size_t i = 1; i < pieces.size () && sig_index < sig_args.size (); i++) {
-			auto &piece = pieces[i];
+		for (size_t i = 1; i < signatureStorage.size () && sig_index < sig_args.size (); i++) {
+			auto &piece = signatureStorage[i];
 			if (piece.flags & ParameterPieces::hiddenretparm) {
 				continue;
 			}
@@ -482,11 +489,13 @@ static void processFunctionSignature(
 			auto mapsymElement = child (symbollistElement, "mapsym");
 			auto symbolElement = child (mapsymElement, "symbol", {
 				{ "name", arg.name },
-				{ "typelock", "true" },
+				{ "typelock", fixedInputs ? "true" : "false" },
 				{ "namelock", "true" },
-				{ "cat", "0" },
-				{ "index", to_string (sig_index - 1) }
+				{ "cat", fixedInputs ? "0" : "-1" }
 			});
+			if (fixedInputs) {
+				symbolElement->addAttribute ("index", to_string (sig_index - 1));
+			}
 
 			childType (symbolElement, arg.type);
 			childAddr (mapsymElement, "addr", piece.addr);
@@ -513,7 +522,9 @@ static bool protoHasNoArgs(RCore *core, const char *name) {
 	char *key = r_type_func_key (tdb, name);
 	int argc = 0;
 	// a missing args key is an unknown prototype, not an empty one
-	const bool noArgs = key && countargs (tdb, key, &argc) && !argc;
+	RTypeFunctionPrototype prototype;
+	const bool noArgs = key && r_type_func_get_prototype (tdb, key, &prototype)
+		&& prototype == R_TYPE_FUNC_PROTOTYPE_FIXED && countargs (tdb, key, &argc) && !argc;
 	free (key);
 	return noArgs;
 }
@@ -599,9 +610,11 @@ FunctionSymbol *R2Scope::registerFunction(RAnalFunction *fcn) const {
 
 	std::unique_ptr<RAnalFunctionSignature, decltype(&r_anal_function_signature_free)> signature_owner (r_anal_function_get_signature (fcn), r_anal_function_signature_free);
 	const RAnalFunctionSignature *signature = signature_owner.get ();
-	if (signature && signature->origin != R_ANAL_FUNCTION_SIGNATURE_ORIGIN_ADDRESS && signature->origin != R_ANAL_FUNCTION_SIGNATURE_ORIGIN_NAME) {
-		signature = nullptr;
+	if (!signature) {
+		throw LowlevelError ("Failed to read function signature for " + to_string (fcn_name));
 	}
+	const bool recordedParams = signature->origin != R_ANAL_FUNCTION_SIGNATURE_ORIGIN_VARIABLES;
+	const bool fixedInputs = recordedParams && signature->prototype == R_TYPE_FUNC_PROTOTYPE_FIXED;
 	const char *callconv = fcn->callconv;
 	ProtoModel *proto = callconv? arch->protoModelFromR2CC (callconv): nullptr;
 	if (!proto) {
@@ -619,6 +632,8 @@ FunctionSymbol *R2Scope::registerFunction(RAnalFunction *fcn) const {
 	bool used_sig_args = false;
 	bool have_sig_proto = false;
 	PrototypePieces sig_proto;
+	std::vector<ParameterPieces> signatureStorage;
+	std::vector<ParameterPieces> variableInputHints;
 
 	FunctionVars vars (core, arch, fcn, proto, stackBias, default_size);
 
@@ -631,7 +646,7 @@ FunctionSymbol *R2Scope::registerFunction(RAnalFunction *fcn) const {
 		// This prevents the arg to be assigned as a local variable in the decompiled function,
 		// which can make the code confusing to read.
 		// (Ghidra does the same)
-		Address rangeAddr(arch->getDefaultCodeSpace(), fcn->addr > 0 ? fcn->addr - 1 : 0);
+		Address rangeAddr = Address (arch->getDefaultCodeSpace (), fcn->addr) - 1;
 		child(e, "range", {
 				{ "space", rangeAddr.getSpace()->getName() },
 				{ "first", hex(rangeAddr.getOffset()) },
@@ -641,13 +656,13 @@ FunctionSymbol *R2Scope::registerFunction(RAnalFunction *fcn) const {
 
 #if R2_ABIVERSION >= 50
 	Datatype *sig_ret_type = resolveFunctionSignatureReturnType (arch, signature, fcn_name);
-	if (proto && signature) {
+	if (proto && recordedParams) {
 		processFunctionSignature (arch, signature, fcn_name, proto, default_size, sig_ret_type,
-			symbollistElement, vars.ranges, used_sig_args, have_sig_proto, sig_proto, childRegRange);
+			symbollistElement, vars.ranges, used_sig_args, have_sig_proto, sig_proto, signatureStorage, childRegRange);
 	}
 #endif
 
-	vars.emit (symbollistElement, used_sig_args, childRegRange);
+	vars.emit (symbollistElement, used_sig_args, recordedParams && !fixedInputs, variableInputHints, childRegRange);
 
 	auto prototypeElement = child(functionElement, "prototype", {
 		{ "extrapop", extraPop == ProtoModel::extrapop_unknown? "unknown": to_string(extraPop) },
@@ -693,14 +708,47 @@ FunctionSymbol *R2Scope::registerFunction(RAnalFunction *fcn) const {
 	XmlDecode dec(arch, &doc);
 	auto sym = cache->addMapSym (dec);
 	auto funcsym = dynamic_cast<FunctionSymbol *>(sym);
-	if (funcsym && have_sig_proto && sig_proto.model) {
-		Funcdata *fd = funcsym->getFunction();
+	if (funcsym) {
+		Funcdata *fd = funcsym->getFunction ();
 		if (fd) {
-			fd->getFuncProto().setPieces(sig_proto);
+			FuncProto &nativeProto = fd->getFuncProto ();
+			if (have_sig_proto && sig_proto.model) {
+				nativeProto.setPieces (sig_proto);
+				if (!sig_ret_type) {
+					nativeProto.setOutputLock (false);
+				}
+			} else {
+				if (sig_ret_type && proto) {
+					if (signatureStorage.empty ()) {
+						PrototypePieces returnPieces;
+						returnPieces.model = proto;
+						returnPieces.outtype = sig_ret_type;
+						returnPieces.firstVarArgSlot = -1;
+						proto->assignParameterStorage (returnPieces, signatureStorage, false);
+					}
+					nativeProto.setOutput (signatureStorage.front ());
+					nativeProto.setOutputLock (true);
+				}
+				if (recordedParams) {
+					ScopeLocal *localScope = fd->getScopeLocal ();
+					for (const auto &hint : variableInputHints) {
+						localScope->addTypeRecommendation (hint.addr, hint.type);
+					}
+					for (size_t i = 1; i < signatureStorage.size (); i++) {
+						const auto &piece = signatureStorage[i];
+						if (!(piece.flags & ParameterPieces::hiddenretparm) && !piece.addr.isInvalid ()) {
+							localScope->addTypeRecommendation (piece.addr, piece.type);
+						}
+					}
+				}
+				if (signature->prototype == R_TYPE_FUNC_PROTOTYPE_UNSPECIFIED || (proto && recordedParams && sig_proto.firstVarArgSlot >= 0)) {
+					nativeProto.setDotdotdot (true);
+				}
+			}
 		}
 	}
-	if (signature? signature->noreturn: fcn->is_noreturn) {
-		markNoReturn (funcsym, have_sig_proto && sig_proto.intypes.empty ());
+	if (signature->noreturn) {
+		markNoReturn (funcsym, have_sig_proto && fixedInputs && sig_proto.intypes.empty ());
 	}
 	return funcsym;
 }
