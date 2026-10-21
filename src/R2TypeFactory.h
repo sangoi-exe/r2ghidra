@@ -27,7 +27,7 @@ private:
 
 	struct TypeResolution {
 		std::set<std::string> &stackTypes;
-		std::vector<Datatype *> pendingUnions;
+		std::vector<Datatype *> pendingAggregates;
 	};
 
 	void checkTypeConstruction() const;
@@ -38,14 +38,14 @@ private:
 	Datatype *queryR2Union(const string &n, TypeResolution &resolution);
 	Datatype *queryR2Base(const string &n);
 	Datatype *queryR2Enum(const string &n, TypeResolution &resolution);
-	Datatype *queryR2Typedef(const string &n, TypeResolution &resolution);
+	Datatype *queryR2Typedef(const string &n, TypeResolution &resolution, bool behindPointer);
 	Datatype *queryR2Function(const string &n, TypeResolution &resolution);
-	Datatype *queryR2(const string &n, TypeResolution &resolution);
-	Datatype *fromCStringResolved(const string &str, string *error, TypeResolution &resolution);
+	Datatype *queryR2(const string &n, TypeResolution &resolution, bool behindPointer = false);
+	Datatype *fromCStringResolved(const string &str, string *error, TypeResolution &resolution, bool behindPointer = false);
 	Datatype *fromDeclaration(const RTypeDeclNode *node, string *error, TypeResolution &resolution, bool behindPointer, int depth = 0);
 	RTypeDecl *toDeclaration(Datatype *type, int depth) const;
-	Datatype *findByIdResolved(const string &n, uint8 id, int4 sz, TypeResolution &resolution, Datatype *r, bool resolvedBase);
-	Datatype *findByName(const string &n, TypeResolution &resolution) { return findByIdResolved(n, 0, 0, resolution, nullptr, false); }
+	Datatype *findByIdResolved(const string &n, uint8 id, int4 sz, TypeResolution &resolution, Datatype *r, bool resolvedBase, bool behindPointer = false);
+	Datatype *findByName(const string &n, TypeResolution &resolution, bool behindPointer = false) { return findByIdResolved(n, 0, 0, resolution, nullptr, false, behindPointer); }
 
 protected:
 	Datatype *findById(const string &n, uint8 id, int4 sz, std::set<std::string> &stackTypes);

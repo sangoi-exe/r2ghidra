@@ -2174,70 +2174,9 @@ void sym.Aeropause(Bright *bright,int32_t argc,char **argv)
 }
 
 --
-
+{"errors":["Ghidra Decompiler Error: Failed to match type BrightTypedefdPtr for variable bright: Unable to resolve type 'BrightTypedefdPtr'"]}
+{"errors":["Ghidra Decompiler Error: Failed to match type struct BrightTypedefd * for variable bright: Conflicting aggregate tag for BrightTypedefd"]}
 void sym.Aeropause(Bright *bright,int32_t argc,char **argv)
-
-{
-    Ambassador AVar1;
-    Morning *pMVar2;
-    int iVar3;
-    
-    pMVar2 = sym.imp.malloc(8);
-    bright->morning = pMVar2;
-    bright->morning->saved_argc = argc;
-    bright->morning->saved_argv = argv;
-    if (bright->morning->saved_argc < 2) {
-        bright->ambassador = AMBASSADOR_PURE;
-    }
-    else {
-        (bright->window).sunlight = bright->morning->saved_argv[1];
-        iVar3 = sym.imp.strcmp((bright->window).sunlight,0x804a05c);
-        if (iVar3 == 0) {
-            bright->ambassador = AMBASSADOR_REASON;
-        }
-        else {
-            iVar3 = sym.imp.strcmp((bright->window).sunlight,"dark");
-            if (iVar3 == 0) {
-                bright->ambassador = AMBASSADOR_REVOLUTION;
-            }
-            else {
-                iVar3 = sym.imp.strcmp((bright->window).sunlight,"third");
-                if (iVar3 == 0) {
-                    bright->ambassador = AMBASSADOR_ECHOES;
-                }
-                else {
-                    bright->ambassador = AMBASSADOR_MILLION;
-                }
-            }
-        }
-    }
-    AVar1 = bright->ambassador;
-    if (AVar1 < (AMBASSADOR_WALL|AMBASSADOR_REASON)) {
-    //switch table (5 cases) at 0x804a070
-        switch(AVar1) {
-        case AMBASSADOR_PURE:
-            sym.imp.printf("pure");
-            break;
-        case AMBASSADOR_REASON:
-            sym.imp.printf("reason");
-            break;
-        case AMBASSADOR_REVOLUTION:
-            sym.imp.printf("revolution");
-            break;
-        case AMBASSADOR_ECHOES:
-            sym.imp.printf("echoes");
-            break;
-        case AMBASSADOR_WALL:
-            sym.imp.printf("wall");
-        }
-    }
-    else if (AVar1 == AMBASSADOR_MILLION) {
-        sym.imp.printf("million");
-    }
-    sym.PrintAmbassador(bright->ambassador);
-    return;
-}
-
 EOF
 CMDS=<<EOF
 aaa
@@ -2254,7 +2193,12 @@ afvb 16 argv const char **
 pdg
 ?e --
 afvb 8 bright BrightTypedefdPtr
-pdg
+pdgj
+afvb 8 bright struct BrightTypedefd *
+pdgj
+tk typedef.BrightTypedefdPtr=BrightTypedefd *
+afvb 8 bright BrightTypedefdPtr
+pdg~sym.Aeropause(
 EOF
 RUN
 
@@ -2279,7 +2223,7 @@ void sym.KillList(LL arg1)
     
     ptr = arg1;
     while (ptr != NULL) {
-        pLVar1 = *&ptr->next;
+        pLVar1 = ptr->next;
         sym.imp.free(ptr);
         ptr = pLVar1;
     }
@@ -2942,23 +2886,23 @@ s main
 af
 e r2ghidra.verbose=true
 afvt var_20h uint8_t[0]
-pdg~Failed to match type~?
+pdgj~Failed to match type~?
 afvt var_20h uint8_t[-1]
-pdg~Failed to match type~?
+pdgj~Failed to match type~?
 afvt var_20h uint8_t[2147483648]
-pdg~Failed to match type~?
+pdgj~Failed to match type~?
 afvt var_20h uint64_t[268435456]
-pdg~Failed to match type~?
+pdgj~Failed to match type~?
 afvt var_20h uint8_t[9999999999999999999999]
-pdg~Failed to match type~?
+pdgj~Failed to match type~?
 afvt var_20h uint8_t[2]junk
-pdg~Failed to match type~?
+pdgj~Failed to match type~?
 afvt var_20h uint8_t[2
-pdg~Failed to match type~?
+pdgj~Failed to match type~?
 afvt var_20h [2]
-pdg~Failed to match type~?
+pdgj~Failed to match type~?
 afvt var_20h uint8_t[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1]
-pdg~Failed to match type~?
+pdgj~Failed to match type~?
 EOF
 EXPECT=<<EOF
 1

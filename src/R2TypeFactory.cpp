@@ -49,15 +49,16 @@ void R2TypeFactory::failTypeConstruction(const string &error) {
 
 void R2TypeFactory::completeResolution(TypeResolution &resolution) {
 	// Drain only at the outward boundary; containing by-value layouts are complete here.
-	for (size_t i = 0; i < resolution.pendingUnions.size (); i++) {
-		Datatype *pointee = resolution.pendingUnions[i];
+	for (size_t i = 0; i < resolution.pendingAggregates.size (); i++) {
+		Datatype *pointee = resolution.pendingAggregates[i];
 		if (pointee->isIncomplete ()) {
 			Datatype *type = queryR2 (pointee->getName (), resolution);
 			if (!type || type->isIncomplete ()) {
-				failTypeConstruction ("Failed to construct complete union " + pointee->getName ());
+				failTypeConstruction ("Failed to construct complete aggregate " + pointee->getName ());
 			}
 		}
 	}
+	resolveIncompleteTypedefs ();
 }
 
 
@@ -453,6 +454,7 @@ Datatype *R2TypeFactory::queryR2Struct(const string &n, TypeResolution &resoluti
 		// Host offsets and explicit extent constrain analysis alignment, not historical ABI alignment.
 		std::stable_sort(fields.begin(), fields.end(), [](const TypeField &a, const TypeField &b) { return a.offset < b.offset; });
 		setFields (fields, {}, r, structSize, align, 0);
+		resolveIncompleteTypedefs ();
 		return r;
 	} catch (std::invalid_argument &e) {
 		arch->addWarning ("Failed to load struct " + n + " from sdb.");
@@ -536,6 +538,7 @@ Datatype *R2TypeFactory::queryR2Union(const string &n, TypeResolution &resolutio
 			}
 		}
 		setFields (fields, r, unionSize, maxAlign, 0);
+		resolveIncompleteTypedefs ();
 		return r;
 	} catch (std::invalid_argument &e) {
 		arch->addWarning ("Failed to load union " + n + " from sdb.");
@@ -549,7 +552,7 @@ Datatype *R2TypeFactory::queryR2Enum(const string &n, TypeResolution &resolution
 	if (!members) {
 		Sdb *sdb = core->anal->sdb_types;
 		const char *alias = sdb_const_get (sdb, ("typedef." + n).c_str (), nullptr);
-		return alias ? queryR2Typedef(n, resolution) : nullptr;
+		return alias ? queryR2Typedef(n, resolution, false) : nullptr;
 	}
 
 	std::vector<std::string> namelist;
@@ -605,25 +608,26 @@ Datatype *R2TypeFactory::queryR2Function(const string &n, TypeResolution &resolu
 		failTypeConstruction ("Invalid function return type in " + n);
 	}
 	if (!proto.outtype) {
-		proto.outtype = getTypeVoid();
+		failTypeConstruction ("Failed to resolve return type in " + n);
 	}
 
 	for (int i = 0; i < arg_count; i++) {
-		char *arg_type = r_type_func_args_type(sdb, n.c_str(), i);
+		std::unique_ptr<char, decltype(&free)> arg_type (r_type_func_args_type (sdb, n.c_str (), i), free);
 		const char *arg_name = r_type_func_args_name(sdb, n.c_str(), i);
 		// the variadic slot is stored as `,...` so the marker lands in the name, not the type
-		if ((arg_type && !strcmp(arg_type, "...")) || (arg_name && !strcmp(arg_name, "..."))) {
+		if ((arg_type && !strcmp(arg_type.get (), "...")) || (arg_name && !strcmp(arg_name, "..."))) {
 			proto.firstVarArgSlot = proto.intypes.size();
-			free(arg_type);
 			continue;
 		}
 
 		Datatype *arg = nullptr;
 		if (arg_type && *arg_type) {
-			arg = fromCStringResolved(arg_type, nullptr, resolution);
+			arg = fromCStringResolved(arg_type.get (), nullptr, resolution);
+			if (!arg) {
+				failTypeConstruction ("Failed to resolve parameter type in " + n);
+			}
 		}
 		if (arg && arg->getMetatype () == TYPE_CODE) {
-			free (arg_type);
 			failTypeConstruction ("Function parameter requires an explicit pointer in " + n);
 		}
 		if (!arg) {
@@ -632,22 +636,19 @@ Datatype *R2TypeFactory::queryR2Function(const string &n, TypeResolution &resolu
 		proto.intypes.push_back(arg);
 		proto.innames.push_back(arg_name ? arg_name : "");
 
-		if (arg_type) {
-			free(arg_type);
-		}
 	}
 
 	return getTypeCode(proto);
 }
 
-Datatype *R2TypeFactory::queryR2Typedef(const string &n, TypeResolution &resolution) {
+Datatype *R2TypeFactory::queryR2Typedef(const string &n, TypeResolution &resolution, bool behindPointer) {
 	RCoreLock core(arch->getCore());
 	Sdb *sdb = core->anal->sdb_types;
 	const char *target = sdb_const_get (sdb, ("typedef." + n).c_str (), nullptr);
 	if(!target) {
 		return nullptr;
 	}
-	Datatype *resolved = fromCStringResolved (target, nullptr, resolution);
+	Datatype *resolved = fromCStringResolved (target, nullptr, resolution, behindPointer);
 	if (!resolved) {
 		return nullptr;
 	}
@@ -657,7 +658,7 @@ Datatype *R2TypeFactory::queryR2Typedef(const string &n, TypeResolution &resolut
 	return typedefd;
 }
 
-Datatype *R2TypeFactory::queryR2(const string &n, TypeResolution &resolution) {
+Datatype *R2TypeFactory::queryR2(const string &n, TypeResolution &resolution, bool behindPointer) {
 	if (n.empty()) {
 		return nullptr;
 	}
@@ -666,6 +667,11 @@ Datatype *R2TypeFactory::queryR2(const string &n, TypeResolution &resolution) {
 		return nullptr;
 	}
 	resolution.stackTypes.insert (n);
+	struct StackEntry {
+		std::set<std::string> &stack;
+		const string &name;
+		~StackEntry() { stack.erase (name); }
+	} entry{resolution.stackTypes, n};
 
 	RCoreLock core (arch->getCore ());
 	int kind = r_type_kind (core->anal->sdb_types, n.c_str ());
@@ -673,12 +679,11 @@ Datatype *R2TypeFactory::queryR2(const string &n, TypeResolution &resolution) {
 	case R_TYPE_BASIC:
 		return queryR2Base(n);
 	case R_TYPE_STRUCT:
-		return queryR2Struct (n, resolution);
 	case R_TYPE_UNION: {
 		try {
-			Datatype *type = queryR2Union (n, resolution);
+			Datatype *type = kind == R_TYPE_STRUCT ? queryR2Struct (n, resolution) : queryR2Union (n, resolution);
 			if (!type || type->isIncomplete ()) {
-				throw LowlevelError ("Failed to construct complete union " + n);
+				throw LowlevelError (string ("Failed to construct complete ") + (kind == R_TYPE_STRUCT ? "struct " : "union ") + n);
 			}
 			return type;
 		} catch (const LowlevelError &error) {
@@ -689,7 +694,7 @@ Datatype *R2TypeFactory::queryR2(const string &n, TypeResolution &resolution) {
 	case R_TYPE_ENUM:
 		return queryR2Enum (n, resolution);
 	case R_TYPE_TYPEDEF:
-		return queryR2Typedef (n, resolution);
+		return queryR2Typedef (n, resolution, behindPointer);
 	case R_TYPE_FUNCTION:
 		return queryR2Function (n, resolution);
 	default:
@@ -697,7 +702,7 @@ Datatype *R2TypeFactory::queryR2(const string &n, TypeResolution &resolution) {
 	}
 }
 
-Datatype *R2TypeFactory::findByIdResolved(const string &n, uint8 id, int4 sz, TypeResolution &resolution, Datatype *r, bool resolvedBase) {
+Datatype *R2TypeFactory::findByIdResolved(const string &n, uint8 id, int4 sz, TypeResolution &resolution, Datatype *r, bool resolvedBase, bool behindPointer) {
 	// resolve basic types
 	if (!resolvedBase) {
 		r = TypeFactory::findById (n, id, sz);
@@ -708,8 +713,8 @@ Datatype *R2TypeFactory::findByIdResolved(const string &n, uint8 id, int4 sz, Ty
 	}
 	// re-parsing a name already on the resolution stack would recurse forever
 	const bool revisiting = resolution.stackTypes.find (n) != resolution.stackTypes.end ();
-	if (r == nullptr || (r->getMetatype () == TYPE_UNION && r->isIncomplete () && !revisiting)) {
-		r = queryR2 (n, resolution);
+	if (r == nullptr || (r->isIncomplete () && !behindPointer && !revisiting)) {
+		r = queryR2 (n, resolution, behindPointer);
 	}
 	if (r == nullptr && !revisiting) {
 		const bool needs_parse =
@@ -730,16 +735,6 @@ Datatype *R2TypeFactory::findByIdResolved(const string &n, uint8 id, int4 sz, Ty
 			r = base_or_unknown (this, builtin.size, builtin.meta);
 		}
 	}
-	// Fallback to a basic type if the type cannot be resolved
-	if (r == nullptr) {
-		int4 fallback_size = (sz > 0) ? sz : getSizeOfInt();
-		r = getBase(fallback_size, TYPE_INT);
-		if (r) {
-			std::stringstream ss;
-			ss << "Unable to resolve type '" << n << "', using int" << (fallback_size * 8) << "_t instead";
-			arch->addWarning(ss.str());
-		}
-	}
 	return r;
 }
 
@@ -755,10 +750,11 @@ Datatype *R2TypeFactory::findById(const string &n, uint8 id, int4 sz, std::set<s
 Datatype *R2TypeFactory::findById(const string &n, uint8 id, int4 sz) {
 	checkTypeConstruction ();
 	Datatype *r = TypeFactory::findById (n, id, sz);
-	if (r && !(r->getMetatype () == TYPE_UNION && r->isIncomplete ())) {
+	// Native typerefs may refer to opaque identities; declarations check completeness separately.
+	if (r) {
 		return r;
 	}
-	// the slow path ignores id and only uses sz for the fallback size, so name-keyed memoization is sound for sz <= 0
+	// The slow path resolves declared names independently of the requested storage size.
 	const bool cacheable = !n.empty () && sz <= 0;
 	if (cacheable) {
 		auto it = lookupCache.find (n);
@@ -794,7 +790,7 @@ Datatype *R2TypeFactory::fromCString(const string &str, string *error, std::set<
 	return type;
 }
 
-Datatype *R2TypeFactory::fromCStringResolved(const string &str, string *error, TypeResolution &resolution) {
+Datatype *R2TypeFactory::fromCStringResolved(const string &str, string *error, TypeResolution &resolution, bool behindPointer) {
 	checkTypeConstruction ();
 	std::string key = normalize_ws (trim_ws (str));
 	if (key.empty ()) {
@@ -818,5 +814,5 @@ Datatype *R2TypeFactory::fromCStringResolved(const string &str, string *error, T
 		return nullptr;
 	}
 	free (parseError);
-	return fromDeclaration (decl->type, error, resolution, false);
+	return fromDeclaration (decl->type, error, resolution, behindPointer);
 }

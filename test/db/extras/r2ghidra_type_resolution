@@ -1,0 +1,265 @@
+NAME=unresolved declared arguments and returns refuse instead of substituting storage
+FILE=hex://89f8c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"afs int32_t declared(int32_t value)"
+afc amd64
+tk func.declared.arg.0=Missing,value
+pdgj
+tk func.declared.arg.0=int32_t,value
+tk func.declared.ret=Missing
+pdgj
+tk func.declared.ret=int32_t
+tk func.declared.arg.0=uint8_t[0],value
+pdgj
+tk func.declared.arg.0=int32_t,value
+pdg~declared(
+EOF
+EXPECT=<<EOF
+{"errors":["Ghidra Decompiler Error: Failed to match arg type Missing for function declared: Unable to resolve type 'Missing'"]}
+{"errors":["Ghidra Decompiler Error: Failed to match return type Missing for function declared: Unable to resolve type 'Missing'"]}
+{"errors":["Ghidra Decompiler Error: Failed to match arg type uint8_t[0] for function declared: Invalid or oversized array type"]}
+int32_t declared(int32_t value)
+EOF
+RUN
+
+NAME=unresolved local declarations refuse instead of becoming inferred unknowns
+FILE=hex://89f8c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+afvb -8 local Missing
+pdgj
+afvt local uint8_t[0]
+pdgj
+EOF
+EXPECT=<<EOF
+{"errors":["Ghidra Decompiler Error: Failed to match type Missing for variable local: Unable to resolve type 'Missing'"]}
+{"errors":["Ghidra Decompiler Error: Failed to match type uint8_t[0] for variable local: Invalid or oversized array type"]}
+EOF
+RUN
+
+NAME=unresolved named callback declarations refuse instead of void or unknown substitution
+FILE=hex://89f8c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"afs int32_t callback_owner(int32_t value)"
+afc amd64
+tk Callback=func
+tk func.Callback.args=1
+tk func.Callback.arg.0=int32_t,value
+tk func.Callback.ret=Missing
+tk func.callback_owner.arg.0=func.Callback *,callback
+pdgj
+tk func.Callback.ret=int32_t
+tk func.Callback.arg.0=Missing,value
+pdgj
+EOF
+EXPECT=<<EOF
+{"errors":["Ghidra Decompiler Error: Failed to resolve return type in Callback"]}
+{"errors":["Ghidra Decompiler Error: Failed to resolve parameter type in Callback"]}
+EOF
+RUN
+
+NAME=stale declared globals refuse instead of interpreting their first letter as pf syntax
+FILE=hex://8b050a000000c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"td typedef int intMissing;"
+avg intMissing target @ 16
+pdg~return
+t- intMissing
+pdgj
+"td typedef int intMissing;"
+tk typedef.intMissing=uint8_t[0]
+pdgj
+EOF
+EXPECT=<<EOF
+    return target;
+{"errors":["Ghidra Decompiler Error: Failed to match type intMissing for global variable target: Unable to resolve type 'intMissing'"]}
+{"errors":["Ghidra Decompiler Error: Failed to match type intMissing for global variable target: Unable to resolve type 'intMissing'"]}
+EOF
+RUN
+
+NAME=direct Sdb opaque struct and union pointees retain identities through typedefs and native XML
+FILE=hex://c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+tk OpaqueS=struct
+tk OpaqueU=union
+tk SA=typedef
+tk typedef.SA=struct OpaqueS
+tk UA=typedef
+tk typedef.UA=union OpaqueU
+"afs void opaque(SA *s, UA *u, struct TaggedS *t, union TaggedU *v)"
+afc amd64
+pdgd~:2..14
+pdg~opaque(
+"afs void incomplete(SA value)"
+afc amd64
+pdgj
+"afs void incomplete(UA value)"
+afc amd64
+pdgj
+"afs void incomplete(struct TaggedS value)"
+afc amd64
+pdgj
+"afs void incomplete(union TaggedU value)"
+afc amd64
+pdgj
+EOF
+EXPECT=<<EOF
+  <typegrp>
+    <type name="OpaqueU" id="0xd0b1db6171756653" size="0" metatype="union" alignment="1"/>
+    <def name="UA" id="0xc0000000007b5541">
+      <typeref name="OpaqueU" id="0xd0b1db6171756653"/>
+    </def>
+    <type name="TaggedU" id="0xc5ff6199323334ab" size="0" metatype="union" alignment="1"/>
+    <type name="OpaqueS" id="0xd0b1db6171756651" size="0" metatype="struct" alignment="1"/>
+    <def name="SA" id="0xc0000000007b5341">
+      <typeref name="OpaqueS" id="0xd0b1db6171756651"/>
+    </def>
+    <type name="TaggedS" id="0xc5ff619932333755" size="0" metatype="struct" alignment="1"/>
+  </typegrp>
+void opaque(SA *s,UA *u,TaggedS *t,TaggedU *v)
+{"errors":["Ghidra Decompiler Error: Failed to construct complete struct OpaqueS"]}
+{"errors":["Ghidra Decompiler Error: Failed to construct complete union OpaqueU"]}
+{"errors":["Ghidra Decompiler Error: Failed to match arg type struct TaggedS for function incomplete: Unable to resolve type 'TaggedS'"]}
+{"errors":["Ghidra Decompiler Error: Failed to match arg type union TaggedU for function incomplete: Unable to resolve type 'TaggedU'"]}
+EOF
+RUN
+
+NAME=direct Sdb incomplete aggregate return declarations require layouts
+FILE=hex://c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"afs int32_t incomplete(void)"
+afc amd64
+tk Opaque=struct
+tk func.incomplete.ret=struct Opaque
+pdgj
+tk Opaque=union
+tk func.incomplete.ret=union Opaque
+pdgj
+EOF
+EXPECT=<<EOF
+{"errors":["Ghidra Decompiler Error: Failed to construct complete struct Opaque"]}
+{"errors":["Ghidra Decompiler Error: Failed to construct complete union Opaque"]}
+EOF
+RUN
+
+NAME=direct Sdb recursive union aliases complete in both fresh factory root orders with eight byte stride
+FILE=hex://488b07488b4008c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+tk BA=typedef
+tk typedef.BA=union B
+tk A=union
+tk union.A=p
+tk union.A.p=BA *,0,0
+tk type.A.size=64
+tk B=union
+tk union.B=a,value
+tk union.B.a=union A,0,0
+tk union.B.value=unsigned long long,0,0
+tk type.B.size=64
+"afs uint64_t read_a(union A *p)"
+afc amd64
+pdgd~:2..22
+pdg~return
+"afs uint64_t read_b(union B *p)"
+afc amd64
+pdgd~:2..22
+pdg~return
+EOF
+EXPECT=<<EOF
+  <typegrp>
+    <def name="BA" id="0xc00000feab85e941">
+      <typeref name="B" id="0xc0000000feab85e9"/>
+    </def>
+    <type name="A" id="0xc000000000007b41" size="8" metatype="union" alignment="8">
+      <field name="p" offset="0">
+        <type name="" size="8" metatype="ptr">
+          <typeref name="BA" id="0xc00000feab85e941"/>
+        </type>
+      </field>
+    </type>
+    <type name="B" id="0xc0000000feab85e9" size="8" metatype="union" alignment="8">
+      <field name="a" offset="0">
+        <typeref name="A" id="0xc000000000007b41"/>
+      </field>
+      <field name="value" offset="0">
+        <typeref name="uint64_t" id="0xe0c26e8a639f5ff9"/>
+      </field>
+    </type>
+  </typegrp>
+    return p->p[1].value;
+  <typegrp>
+    <def name="BA" id="0xc00000feab85e941">
+      <typeref name="B" id="0xc0000000feab85e9"/>
+    </def>
+    <type name="A" id="0xc000000000007b41" size="8" metatype="union" alignment="8">
+      <field name="p" offset="0">
+        <type name="" size="8" metatype="ptr">
+          <typeref name="BA" id="0xc00000feab85e941"/>
+        </type>
+      </field>
+    </type>
+    <type name="B" id="0xc0000000feab85e9" size="8" metatype="union" alignment="8">
+      <field name="a" offset="0">
+        <typeref name="A" id="0xc000000000007b41"/>
+      </field>
+      <field name="value" offset="0">
+        <typeref name="uint64_t" id="0xe0c26e8a639f5ff9"/>
+      </field>
+    </type>
+  </typegrp>
+    return (*&p->a)[1].value;
+EOF
+RUN
+
+NAME=direct Sdb chained aliases complete before a later by value member and array stride
+FILE=hex://488b07488b4008c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+tk BA=typedef
+tk typedef.BA=union B
+tk BAA=typedef
+tk typedef.BAA=BA
+tk A=union
+tk union.A=p,value
+tk union.A.p=BAA *,0,0
+tk union.A.value=BAA,0,0
+tk type.A.size=64
+tk B=union
+tk union.B=value
+tk union.B.value=unsigned long long,0,0
+tk type.B.size=64
+"afs uint64_t read_a(A *p)"
+afc amd64
+pdgd~def name=
+pdgd~type name="A"~size="8"~metatype="union"~?
+pdg~return
+EOF
+EXPECT=<<EOF
+    <def name="BA" id="0xc00000feab85e941">
+    <def name="BAA" id="0xc000feab85e94141">
+1
+    return p->p[1].value;
+EOF
+RUN

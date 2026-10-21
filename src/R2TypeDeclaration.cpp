@@ -43,33 +43,60 @@ Datatype *R2TypeFactory::fromDeclaration(const RTypeDeclNode *node, string *erro
 	switch (node->kind) {
 	case R_TYPE_DECL_BASE: {
 		std::string name = node->base.name;
-		for (const char *prefix : { "struct ", "union ", "enum " }) {
-			if (name.rfind (prefix, 0) == 0) {
-				name.erase (0, strlen (prefix));
-				break;
-			}
+		RTypeKind tagKind = R_TYPE_INVALID;
+		if (name.rfind ("struct ", 0) == 0) {
+			tagKind = R_TYPE_STRUCT;
+			name.erase (0, 7);
+		} else if (name.rfind ("union ", 0) == 0) {
+			tagKind = R_TYPE_UNION;
+			name.erase (0, 6);
+		} else if (name.rfind ("enum ", 0) == 0) {
+			tagKind = R_TYPE_ENUM;
+			name.erase (0, 5);
 		}
-		if (name == "void") {
+		if (name == "void" && tagKind == R_TYPE_INVALID) {
 			return getTypeVoid ();
 		}
-		if (name.rfind ("func.", 0) == 0) {
+		if (name.rfind ("func.", 0) == 0 && tagKind == R_TYPE_INVALID) {
 			return queryR2Function (name.substr (5), resolution);
 		}
-		if (behindPointer) {
-			RCoreLock core (arch->getCore ());
-			if (r_type_kind (core->anal->sdb_types, name.c_str ()) == R_TYPE_UNION) {
-				// Only the pointer can be complete before its recursive union pointee.
-				Datatype *base = TypeFactory::findById (name, 0, 0);
-				if (!base) {
-					base = getTypeUnion (name);
-				}
-				if (base->isIncomplete ()) {
-					resolution.pendingUnions.push_back (base);
-				}
-				return base;
+		RCoreLock core (arch->getCore ());
+		const RTypeKind kind = r_type_kind (core->anal->sdb_types, name.c_str ());
+		if (tagKind != R_TYPE_INVALID && kind != R_TYPE_INVALID && kind != tagKind) {
+			if (error) {
+				*error = "Conflicting aggregate tag for " + name;
 			}
+			return nullptr;
 		}
-		return findByName (name, resolution);
+		const RTypeKind aggregateKind = tagKind != R_TYPE_INVALID ? tagKind : kind;
+		if (behindPointer && (aggregateKind == R_TYPE_STRUCT || aggregateKind == R_TYPE_UNION)) {
+			Datatype *base = TypeFactory::findById (name, 0, 0);
+			const type_metatype meta = aggregateKind == R_TYPE_STRUCT ? TYPE_STRUCT : TYPE_UNION;
+			if (base && base->getMetatype () != meta) {
+				if (error) {
+					*error = "Conflicting aggregate identity for " + name;
+				}
+				return nullptr;
+			}
+			if (!base) {
+				base = aggregateKind == R_TYPE_STRUCT ? static_cast<Datatype *>(getTypeStruct (name)) : getTypeUnion (name);
+			}
+			const string definitionKey = (aggregateKind == R_TYPE_STRUCT ? "struct." : "union.") + name;
+			const char *definition = sdb_const_get (core->anal->sdb_types, definitionKey.c_str (), nullptr);
+			// Opaque pointees need an identity, not a mandatory completion attempt.
+			if (base->isIncomplete () && definition && *definition) {
+				resolution.pendingAggregates.push_back (base);
+			}
+			return base;
+		}
+		Datatype *type = findByName (name, resolution, behindPointer);
+		if (!type || (!behindPointer && type->isIncomplete ())) {
+			if (error) {
+				*error = "Unable to resolve " + string (type ? "complete type '" : "type '") + name + "'";
+			}
+			return nullptr;
+		}
+		return type;
 	}
 	case R_TYPE_DECL_POINTER: {
 		int4 size = getSizeOfPointer ();

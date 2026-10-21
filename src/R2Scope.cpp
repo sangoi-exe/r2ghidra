@@ -173,8 +173,10 @@ struct FunctionVars {
 		if (type && type->getMetatype () == TYPE_CODE) {
 			throw LowlevelError ("Function object requires an explicit pointer: " + to_string (var->type));
 		}
+		if (!type && var->type && *var->type) {
+			throw LowlevelError ("Failed to match type " + to_string (var->type) + " for variable " + to_string (var->name) + ": " + typeError);
+		}
 		if (!type) {
-			arch->addWarning ("Failed to match type " + to_string (var->type) + " for variable " + to_string (var->name) + " to Decompiler type: " + typeError);
 			type = arch->types->getBase (default_size, TYPE_UNKNOWN);
 		}
 		if (type && type->getSize () < 1) {
@@ -398,7 +400,7 @@ static Datatype *resolveFunctionSignatureReturnType(R2Architecture *arch, const 
 		throw LowlevelError ("Invalid function return type " + to_string (signature->ret_type));
 	}
 	if (!type) {
-		arch->addWarning ("Failed to match return type " + to_string (signature->ret_type) + " for function " + to_string (fcn_name) + ": " + typeError);
+		throw LowlevelError ("Failed to match return type " + to_string (signature->ret_type) + " for function " + to_string (fcn_name) + ": " + typeError);
 	}
 	return type;
 }
@@ -436,8 +438,7 @@ static void processFunctionSignature(
 			throw LowlevelError ("Function parameter requires an explicit pointer: " + to_string (arg->type));
 		}
 		if (!type) {
-			arch->addWarning ("Failed to match arg type " + to_string (arg->type) + " for function " + to_string (fcn_name) + ": " + typeError);
-			type = arch->types->getBase (default_size, TYPE_UNKNOWN);
+			throw LowlevelError ("Failed to match arg type " + to_string (arg->type) + " for function " + to_string (fcn_name) + ": " + typeError);
 		}
 		if (type && type->getSize () > 0) {
 			sig_args.push_back ({name, type});
@@ -781,27 +782,6 @@ Symbol *R2Scope::registerFlag(RFlagItem *flag) const {
 	return symbol;
 }
 
-static Datatype *formatCharToType(TypeFactory *types, char fmt, int default_size) {
-	switch (fmt) {
-	case 'b': return types->getBase (1, TYPE_UINT);
-	case 'c': return types->getBase (1, TYPE_INT);
-	case 'w': return types->getBase (2, TYPE_UINT);
-	case 'W': return types->getBase (2, TYPE_INT);
-	case 'd': return types->getBase (4, TYPE_INT);
-	case 'x': return types->getBase (4, TYPE_UINT);
-	case 'i': return types->getBase (4, TYPE_INT);
-	case 'q': return types->getBase (8, TYPE_INT);
-	case 'Q': return types->getBase (8, TYPE_UINT);
-	case 'f': return types->getBase (4, TYPE_FLOAT);
-	case 'F': return types->getBase (8, TYPE_FLOAT);
-	case 'p':
-	case '*':
-		return types->getBase (default_size, TYPE_UINT);
-	default:
-		return nullptr;
-	}
-}
-
 Symbol *R2Scope::registerGlobalVar(RFlagItem *glob, const char *type_str) const {
 	RCoreLock core (arch->getCore ());
 	uint4 attr = Varnode::namelock | Varnode::typelock;
@@ -810,22 +790,13 @@ Symbol *R2Scope::registerGlobalVar(RFlagItem *glob, const char *type_str) const 
 
 	Datatype *type = nullptr;
 	std::string typeError;
-	const int default_size = core->anal->config->bits / 8;
 
 	type = arch->getTypeFactory ()->fromCString (type_str, &typeError);
 	if (type && type->getMetatype () == TYPE_CODE) {
 		throw LowlevelError ("Function object requires an explicit pointer: " + to_string (type_str));
 	}
-	if (!type && type_str && type_str[0]) {
-		type = formatCharToType (arch->types, type_str[0], default_size);
-	}
 	if (!type) {
-		arch->addWarning ("Failed to create type for global variable "
-			+ to_string (glob->name) + ", using default int");
-		type = arch->types->getBase (default_size, TYPE_INT);
-	}
-	if (!type) {
-		return nullptr;
+		throw LowlevelError ("Failed to match type " + to_string (type_str) + " for global variable " + to_string (glob->name) + ": " + typeError);
 	}
 
 	const char *name = (core->flags->realnames && glob->realname)
