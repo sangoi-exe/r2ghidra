@@ -211,7 +211,7 @@ static bool DeclarationKnown(RAnal *anal, const RTypeDeclNode *node) {
 }
 
 static bool TypeParseable(RAnal *anal, const std::string &type, bool returnType = false) {
-	RTypeDecl *decl = r_type_decl_parse (type.c_str (), R_TYPE_DECL_CONTEXT_ABSTRACT, nullptr);
+	RTypeDecl *decl = r_type_decl_parse (type.c_str (), R_TYPE_DECL_CONTEXT_ABSTRACT, anal->sdb_types, nullptr);
 	const bool valid = decl && (!returnType || (decl->type->kind != R_TYPE_DECL_ARRAY && decl->type->kind != R_TYPE_DECL_FUNCTION)) && DeclarationKnown (anal, decl->type);
 	r_type_decl_free (decl);
 	return valid;

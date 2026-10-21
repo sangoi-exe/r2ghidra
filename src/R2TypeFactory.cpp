@@ -813,7 +813,7 @@ Datatype *R2TypeFactory::fromCStringResolved(const string &str, string *error, T
 		return entry.type;
 	}
 	char *parseError = nullptr;
-	std::unique_ptr<RTypeDecl, decltype(&r_type_decl_free)> decl (r_type_decl_parse (key.c_str (), R_TYPE_DECL_CONTEXT_ABSTRACT, &parseError), r_type_decl_free);
+	std::unique_ptr<RTypeDecl, decltype(&r_type_decl_free)> decl (r_type_decl_parse (key.c_str (), R_TYPE_DECL_CONTEXT_ABSTRACT, core->anal->sdb_types, &parseError), r_type_decl_free);
 	if (!decl) {
 		if (error) {
 			*error = parseError ? parseError : "Invalid type declaration";
