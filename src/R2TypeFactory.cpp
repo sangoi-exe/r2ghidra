@@ -370,7 +370,9 @@ Datatype *R2TypeFactory::queryR2Base(const string &n) {
 			return nullptr;
 		}
 		size = bits / 8;
-		meta = formatToMeta(r_type_format(sdb, n.c_str()));
+		char *format = r_type_format (sdb, n.c_str ());
+		meta = formatToMeta (format);
+		free (format);
 	}
 	Datatype *base = base_or_unknown(this, size, meta);
 	if (!base) {
