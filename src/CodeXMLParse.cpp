@@ -294,8 +294,8 @@ static void ParseNode(RXmlNode *node, ParseCodeXMLContext *ctx, std::ostream &st
 	// an annotation applies for a node an all its children
 	for (auto &annotation : annotations) {
 		annotation.end = stream.tellp();
-		RCodeMetaItem *item = r_codemeta_item_clone(&annotation);
-		r_codemeta_add_item(code, item);
+		r_codemeta_add_item(code, &annotation);
+		r_codemeta_item_fini(&annotation);
 	}
 }
 
@@ -314,6 +314,7 @@ R_API RCodeMeta *ParseCodeXML(ghidra::Funcdata *func, const char *xml) {
 	ParseNode (rxml_dom_first_child(doc), &ctx, ss, code);
 	rxml_dom_free(doc);
 	std::string str = ss.str ();
+	free (code->code);
 	code->code = strdup (str.c_str ());
 	return code;
 }
