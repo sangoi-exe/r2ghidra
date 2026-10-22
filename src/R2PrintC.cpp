@@ -64,7 +64,7 @@ void R2PrintC::setOptionNoCasts(bool nc) {
 }
 
 void R2PrintC::emitTypeModel(const FuncProto *proto) {
-	if (!proto->isModelDeclared ()) {
+	if (!option_convention || !proto->isModelDeclared ()) {
 		return;
 	}
 	string attribute = "__attribute__((r2_cc(\"";

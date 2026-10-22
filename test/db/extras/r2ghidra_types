@@ -81,6 +81,49 @@ EXPECT_ERR=<<EOF
 EOF
 RUN
 
+NAME=ccode hides supplied callback convention without erasing metadata during harvest
+FILE=hex://cb
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+af+ 0 display_owner
+afb+ 0 0 1
+e types.plugin=c2
+e r2ghidra.lang=x86:LE:16:Protected Mode
+tcc ax __cdecl16near(stack)
+e anal.cc=__cdecl16near
+"afs void display_owner(uint16_t (__attribute__((r2_cc(\"__cdecl16near\"))) far *callback)(uint16_t value), uint16_t (*values)[010])"
+afc __cdecl16near
+e r2ghidra.ccode=false
+pdg~r2_cc~?
+pdgd~prototype model="__cdecl16near"~modeldeclared="true"~?
+e r2ghidra.ccode=true
+pdg~r2_cc~?
+pdg~display_owner(
+pdgd~prototype model="__cdecl16near"~modeldeclared="true"~?
+pdgw
+tk func.display_owner.arg.0
+tk func.display_owner.arg.1
+pdg~r2_cc~?
+pdgd~prototype model="__cdecl16near"~modeldeclared="true"~?
+e r2ghidra.ccode=false
+pdg~r2_cc~?
+EOF
+EXPECT=<<EOF
+1
+1
+0
+void display_owner(uint16_t (far *callback)(uint16_t),uint16_t (near *values) [8])
+1
+uint16_t (__attribute__((r2_cc("__cdecl16near"))) far *)(uint16_t value),callback
+uint16_t (near *)[8],values
+0
+1
+1
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
 NAME=compound return headers and annotations survive manual declaration and writeback
 FILE=hex://b83412cb
 ARGS=-a x86 -b 16 -e log.level=0
