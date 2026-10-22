@@ -385,6 +385,7 @@ static std::string resolve_callee_name(RCore *core, ut64 target) {
 
 struct VariadicSig {
 	int firstVararg = -1;
+	std::string typeName;
 	std::vector<std::string> fixedTypes;
 	std::vector<std::string> fixedNames;
 	std::string ret;
@@ -415,6 +416,7 @@ static bool parse_variadic_sig(Sdb *tdb, const char *callee, VariadicSig &sig) {
 		}
 		if (sig.firstVararg >= 0) {
 			const char *r = r_type_func_ret (tdb, fname);
+			sig.typeName = fname;
 			sig.ret = r? r: "";
 			ok = true;
 		}
@@ -534,7 +536,7 @@ static void override_format_call(RCore *core, R2Architecture &arch, Funcdata *gh
 	if (!parse_variadic_sig (tdb, callee.c_str (), sig) || sig.firstVararg < 1) {
 		return;
 	}
-	const char *sourceCC = sdb_const_getf (tdb, nullptr, "func.%s.cc", callee.c_str ());
+	const char *sourceCC = sdb_const_getf (tdb, nullptr, "func.%s.cc", sig.typeName.c_str ());
 	// Validate supplied models before consulting host register-location records.
 	arch.protoModelFromR2CC (sourceCC);
 	const char *cc = R_STR_ISNOTEMPTY (sourceCC) ? sourceCC : r_anal_cc_default (core->anal);

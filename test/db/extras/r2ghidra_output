@@ -1029,6 +1029,65 @@ EXPECT=<<EOF
 EOF
 RUN
 
+NAME=decorated configured formatter uses its canonical explicit convention instead of the active default
+FILE=bins/elf/x86_64-varargs.so
+ARGS=-e bin.relocs.apply=true -e log.level=0
+CMDS=<<EOF
+e r2ghidra.varargs=true
+e r2ghidra.varargs.formats=__libc_mylog
+aaa
+fr sym.imp.snprintf sym.imp.__libc_mylog
+td int mylog(char *dst, int n, const char *fmt, ...)
+e anal.cc=ms
+tk func.mylog.cc=amd64
+tk func.mylog.cc
+tk func.__libc_mylog.cc~?
+e anal.cc
+pdgx @ sym.p_snprintf~<protooverride~?
+pdgx @ sym.p_snprintf~prototype model="__stdcall"~?
+pdgx @ sym.p_snprintf~param name="va1"~?
+pdg @ sym.p_snprintf~n=%d
+e anal.cc
+EOF
+EXPECT=<<EOF
+amd64
+0
+ms
+2
+2
+1
+    sym.imp.snprintf(*_reloc.bufp,0x40,"n=%d x=%x",arg1,arg2);
+ms
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=decorated configured formatter refuses its canonical explicit unsupported convention
+FILE=bins/elf/x86_64-varargs.so
+ARGS=-e bin.relocs.apply=true -e log.level=0
+CMDS=<<EOF
+e r2ghidra.varargs=true
+e r2ghidra.varargs.formats=__libc_mylog
+aaa
+fr sym.imp.snprintf sym.imp.__libc_mylog
+td int mylog(char *dst, int n, const char *fmt, ...)
+tk func.mylog.cc=unsupported_formatter_cc
+tk func.mylog.cc
+tk func.__libc_mylog.cc~?
+pdgj @ sym.p_snprintf
+tk func.mylog.cc
+EOF
+EXPECT=<<EOF
+unsupported_formatter_cc
+0
+{"errors":["Ghidra Decompiler Error: Unsupported explicit calling convention unsupported_formatter_cc"]}
+unsupported_formatter_cc
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
 NAME=a formatter absent from r2ghidra.varargs.formats is left to decompiler liveness
 FILE=bins/elf/x86_64-varargs.so
 ARGS=-e bin.relocs.apply=true
