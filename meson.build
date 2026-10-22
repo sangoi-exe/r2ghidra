@@ -47,11 +47,6 @@ if cpp.get_id() == 'msvc'
   add_global_arguments('-D_WINDOWS', language:'cpp')
   add_global_arguments('-D_WIN32', language:'cpp')
   add_global_arguments('-DZLIB_WINAPI', language:'cpp')
-  # BEGIN: r2-6.0.8 hacks
-  add_global_arguments('-DR_ARENA_H=1', language:'cpp')
-  add_global_arguments('-DRArena=int', language:'cpp')
-  add_global_arguments('-DRSlice=int', language:'cpp')
-  # END: r2-6.0.8 hacks
   add_global_arguments('/wd4200', language:'cpp')  # Suppress C4200: zero-sized array in struct
   r2libdir = [
     meson.current_source_dir() + '\\radare2\\lib',
@@ -72,7 +67,42 @@ if cpp.get_id() == 'msvc'
     cpp.find_library('r_config', dirs: r2libdir),
   ]
 else
-  r_core = dependency('r_core', version : '>=6.1.4')
+  r_core = dependency('r_core')
+endif
+
+r2ghidra_incdirs = include_directories(incdirs)
+if not cpp.links('''
+#include "r2ghidra.h"
+int main(int argc, char **argv) {
+  RTypeNamespace space = R_TYPE_NAMESPACE_TAG;
+  RAnalBaseType base = {};
+  base.space = space;
+  RAnalFunctionSignature signature = {};
+  signature.type_name = argv[0];
+  signature.prototype = R_TYPE_FUNC_PROTOTYPE_FIXED;
+  RTypeDeclNode node = {};
+  node.array.count = argv[0];
+  node.function.prototype = true;
+  RTypeIntegerModel model = {16, 32, 64};
+  ut64 count = 0;
+  int parameters = argc;
+  RTypeDecl *decl = r_type_decl_parse(argv[0], R_TYPE_DECL_CONTEXT_ABSTRACT, nullptr, nullptr);
+  r_type_decl_free(decl);
+  r_type_array_bound(&model, argv[0], &count, nullptr);
+  r_type_func_args_count(nullptr, argv[0], &parameters);
+  r_type_func_get_prototype(nullptr, argv[0], &signature.prototype);
+  r_type_func_set_prototype(nullptr, argv[0], signature.prototype);
+  Sdb *types = r_type_namespace(nullptr, base.space, false);
+  free(r_type_identifier_key(argv[0], space));
+  r_anal_base_type_free(r_anal_get_base_type(nullptr, argv[0], space));
+  r_anal_function_signature_free(r_anal_function_get_signature(nullptr));
+  RAnalFunctionSignaturePrepared *prepared = r_anal_function_signature_prepare_structured(nullptr, nullptr, &signature, true, nullptr);
+  bool applied = r_anal_function_signature_apply(nullptr, nullptr, prepared);
+  r_anal_function_signature_prepared_free(prepared);
+  return applied && types;
+}
+''', dependencies: r_core, include_directories: r2ghidra_incdirs, name: 'radare2 ABI 158 semantic type and preserving signature APIs')
+  error('r2ghidra requires radare2 ABI 158 or newer with contextual declarations, array bounds, prototype knowledge, type namespaces, signature record identity and operational-CC-preserving structured preparation; rebuild the matching host SDK')
 endif
 
 r2ghidra_version = meson.project_version()
@@ -85,8 +115,6 @@ r_version_h = configure_file(
 )
 
 add_global_arguments('-DNDEBUG', language: ['c', 'cpp'])
-
-r2ghidra_incdirs = include_directories(incdirs)
 
 ghidra = subproject('ghidra-native', version: '>=0.7.2', default_options: ['default_library=static', 'werror=false'])
 

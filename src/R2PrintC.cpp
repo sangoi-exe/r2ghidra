@@ -63,6 +63,11 @@ void R2PrintC::setOptionNoCasts(bool nc) {
 	option_nocasts = nc;
 }
 
+bool R2PrintC::expandTypeName(const Datatype *type) const {
+	auto arch = dynamic_cast<R2Architecture *>(glb);
+	return arch && arch->getTypeFactory ()->isFunctionRecord (type);
+}
+
 void R2PrintC::pushPointerType(const TypePointer *type) {
 	auto arch = dynamic_cast<R2Architecture *>(glb);
 	const RTypePointerKind kind = arch ? arch->getTypeFactory ()->pointerKind (type) : R_TYPE_POINTER_DEFAULT;

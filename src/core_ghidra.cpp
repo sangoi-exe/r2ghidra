@@ -31,10 +31,6 @@
 
 #undef DEBUG_EXCEPTIONS
 
-#ifndef R_LIB_ABIVERSION
-#define R_LIB_ABIVERSION R2_ABIVERSION
-#endif
-
 typedef bool (*ConfigVarCb)(void *user, void *data);
 
 struct ConfigVar {
@@ -144,11 +140,7 @@ static const char* r2ghidra_help[] = {
 	NULL
 };
 static void PrintUsage(const RCore *const core) {
-#if R_LIB_ABIVERSION >= 125
 	r_cons_cmd_help (core->cons, r2ghidra_help);
-#else
-	r_cons_cmd_help (core->cons, r2ghidra_help, core->print->flags & R_PRINT_FLAGS_COLOR);
-#endif
 }
 
 enum class DecompileMode {
@@ -523,53 +515,25 @@ static void DecompileCmd (RCore *core, DecompileMode mode) {
 			break;
 		case DecompileMode::DISASM:
 			{
-#if defined(R2_ABIVERSION) && R2_ABIVERSION >= 40
 				RVecCodeMetaOffset *offsets = r_codemeta_line_offsets (code);
 				char *s = r_codemeta_print_disasm (code, offsets, core->anal);
 				r_cons_print (core->cons, s);
 				free (s);
 				RVecCodeMetaOffset_free (offsets);
-#else
-				RVector *offsets = r_codemeta_line_offsets (code);
-				char *s = r_codemeta_print_disasm (code, offsets, core->anal);
-				r_cons_print (core->cons, s);
-				free (s);
-				r_vector_free (offsets);
-#endif
 			}
 			break;
 		case DecompileMode::OFFSET:
 			{
-#if defined(R2_ABIVERSION) && R2_ABIVERSION >= 40
 				RVecCodeMetaOffset *offsets = r_codemeta_line_offsets (code);
-#if R2_VERSION_NUMBER >= 60003
 				char *s = r_codemeta_print2 (code, offsets, core->anal);
-#else
-				char *s = r_codemeta_print (code, offsets);
-#endif
 				r_cons_print (core->cons, s);
 				free (s);
 				RVecCodeMetaOffset_free (offsets);
-#else
-				RVector *offsets = r_codemeta_line_offsets (code);
-#if R2_VERSION_NUMBER >= 60003
-				char *s = r_codemeta_print2 (code, offsets, core->anal);
-#else
-				char *s = r_codemeta_print (code, offsets);
-#endif
-				r_cons_print (core->cons, s);
-				free (s);
-				r_vector_free (offsets);
-#endif
 			}
 			break;
 		case DecompileMode::DEFAULT:
 			{
-#if R2_VERSION_NUMBER >= 60003
 				char *s = r_codemeta_print2 (code, nullptr, core->anal);
-#else
-				char *s = r_codemeta_print (code, nullptr);
-#endif
 				r_cons_print (core->cons, s);
 				free (s);
 			}
@@ -892,11 +856,7 @@ static void _cmd(RCore *core, const char *input) {
 extern "C" bool r2ghidra_core_cmd(RCorePluginSession *cps, const char *input) {
 	RCore *core = cps->core;
 	if (!strcmp (input, "pd:?")) {
-#if R_LIB_ABIVERSION >= 125
 		r_cons_cmd_help_match (core->cons, r2ghidra_help, "pd:g", 0, false);
-#else
-		r_core_cmd_help_match (core, r2ghidra_help, (char*)"pd:g");
-#endif
 		return false;
 	}
 	if (r_str_startswith (input, "pd:g")) {

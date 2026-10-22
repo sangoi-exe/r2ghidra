@@ -4,6 +4,7 @@
 #include <r_lib.h>
 #include <r_anal.h>
 #include <r_arch.h>
+#include "r2ghidra.h"
 
 extern int archinfo(RArchSession *as, ut32 query);
 extern bool sanal_init(RArchSession *as);
@@ -11,11 +12,7 @@ extern bool sanal_fini(RArchSession *as);
 extern RList *r2ghidra_preludes(RArchSession *as);
 extern int archinfo(RArchSession *as, ut32 query);
 extern char *r2ghidra_regs(RArchSession *as);
-#if R2_ABIVERSION >= 109
 extern bool r2ghidra_esilcb(RArchSession *as, REsil *esil, RArchEsilAction action);
-#else
-extern bool r2ghidra_esilcb(RArchSession *as, RArchEsilAction action);
-#endif
 extern char *get_reg_profile(RAnal *anal);
 bool sleigh_decode(RArchSession *as, RAnalOp *op, RArchDecodeMask mask);
 

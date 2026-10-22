@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 
 #include "R2Architecture.h"
-#include "R2FlagCompat.h"
-#include "R2TypeCompat.h"
+#include "R2FlagLookup.h"
 #include "R2TypeFactory.h"
 #include "R2Scope.h"
 
@@ -390,7 +389,6 @@ struct FunctionVars {
 	}
 };
 
-#if R2_ABIVERSION >= 50
 struct SigArg {
 	std::string name;
 	Datatype *type;
@@ -514,7 +512,6 @@ static void processFunctionSignature(
 		}
 	}
 }
-#endif
 
 static bool protoHasNoArgs(RCore *core, const char *name) {
 	Sdb *tdb = core->anal->sdb_types;
@@ -523,7 +520,7 @@ static bool protoHasNoArgs(RCore *core, const char *name) {
 	// a missing args key is an unknown prototype, not an empty one
 	RTypeFunctionPrototype prototype;
 	const bool noArgs = key && r_type_func_get_prototype (tdb, key, &prototype)
-		&& prototype == R_TYPE_FUNC_PROTOTYPE_FIXED && countargs (tdb, key, &argc) && !argc;
+		&& prototype == R_TYPE_FUNC_PROTOTYPE_FIXED && r_type_func_args_count (tdb, key, &argc) && !argc;
 	free (key);
 	return noArgs;
 }
@@ -614,14 +611,12 @@ FunctionSymbol *R2Scope::registerFunction(RAnalFunction *fcn) const {
 	}
 	const bool recordedParams = signature->origin != R_ANAL_FUNCTION_SIGNATURE_ORIGIN_VARIABLES;
 	const bool fixedInputs = recordedParams && signature->prototype == R_TYPE_FUNC_PROTOTYPE_FIXED;
-	const char *callconv = fcn->callconv;
-	ProtoModel *proto = callconv? arch->protoModelFromR2CC (callconv): nullptr;
+	const char *callconv = r_anal_function_cc (fcn);
+	const char *analysisDefault = r_anal_cc_default (core->anal);
+	const bool effectiveDefault = callconv && analysisDefault && !strcmp (callconv, analysisDefault);
+	ProtoModel *proto = arch->protoModelFromR2CC (callconv, effectiveDefault);
 	if (!proto) {
-		if (callconv) {
-			arch->addWarning ("Matching calling convention " + to_string(callconv) + " of function " + to_string(fcn_name) + " failed, args may be inaccurate.");
-		} else {
-			arch->addWarning ("Function " + to_string(fcn_name) + " has no calling convention set, args may be inaccurate.");
-		}
+		throw LowlevelError ("Missing prototype model for function " + to_string (fcn_name));
 	}
 
 	const int4 extraPop = proto? proto->getExtraPop (): ProtoModel::extrapop_unknown;
@@ -653,13 +648,11 @@ FunctionSymbol *R2Scope::registerFunction(RAnalFunction *fcn) const {
 		});
 	};
 
-#if R2_ABIVERSION >= 50
 	Datatype *sig_ret_type = resolveFunctionSignatureReturnType (arch, signature, fcn_name);
 	if (proto && recordedParams) {
 		processFunctionSignature (arch, signature, fcn_name, proto, default_size, sig_ret_type,
 			symbollistElement, vars.ranges, used_sig_args, have_sig_proto, sig_proto, signatureStorage, childRegRange);
 	}
-#endif
 
 	vars.emit (symbollistElement, used_sig_args, recordedParams && !fixedInputs, variableInputHints, childRegRange);
 
@@ -686,16 +679,11 @@ FunctionSymbol *R2Scope::registerFunction(RAnalFunction *fcn) const {
 	auto returnsymElement = child(prototypeElement, "returnsym");
 	childAddr (returnsymElement, "addr", returnAddr);
 
-#if R2_ABIVERSION >= 50
-	std::string return_type_name = sig_ret_type ? sig_ret_type->getName () : "uint";
-	child (returnsymElement, "typeref", {
-		{ "name", return_type_name }
-	});
-#else
-	child (returnsymElement, "typeref", {
-		{ "name", "uint" }
-	});
-#endif
+	if (sig_ret_type) {
+		childType (returnsymElement, sig_ret_type);
+	} else {
+		child (returnsymElement, "typeref", { { "name", "uint" } });
+	}
 
 	child (&doc, "addr", {
 		{ "space", arch->getDefaultCodeSpace()->getName() },

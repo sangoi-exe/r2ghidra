@@ -59,8 +59,43 @@ ifeq ($(R2_LIBEXT),)
 Cannot run r2
 endif
 
+
+.PHONY: check-radare2-sdk
+check-radare2-sdk:
+	@printf '%s\n' \
+		'#include "r2ghidra.h"' \
+		'int main(int argc, char **argv) {' \
+		'  RTypeNamespace space = R_TYPE_NAMESPACE_TAG;' \
+		'  RAnalBaseType base = {};' \
+		'  base.space = space;' \
+		'  RAnalFunctionSignature signature = {};' \
+		'  signature.type_name = argv[0];' \
+		'  signature.prototype = R_TYPE_FUNC_PROTOTYPE_FIXED;' \
+		'  RTypeDeclNode node = {};' \
+		'  node.array.count = argv[0];' \
+		'  node.function.prototype = true;' \
+		'  RTypeIntegerModel model = {16, 32, 64};' \
+		'  ut64 count = 0;' \
+		'  int parameters = argc;' \
+		'  RTypeDecl *decl = r_type_decl_parse(argv[0], R_TYPE_DECL_CONTEXT_ABSTRACT, nullptr, nullptr);' \
+		'  r_type_decl_free(decl);' \
+		'  r_type_array_bound(&model, argv[0], &count, nullptr);' \
+		'  r_type_func_args_count(nullptr, argv[0], &parameters);' \
+		'  r_type_func_get_prototype(nullptr, argv[0], &signature.prototype);' \
+		'  r_type_func_set_prototype(nullptr, argv[0], signature.prototype);' \
+		'  Sdb *types = r_type_namespace(nullptr, base.space, false);' \
+		'  free(r_type_identifier_key(argv[0], space));' \
+		'  r_anal_base_type_free(r_anal_get_base_type(nullptr, argv[0], space));' \
+		'  r_anal_function_signature_free(r_anal_function_get_signature(nullptr));' \
+		'  RAnalFunctionSignaturePrepared *prepared = r_anal_function_signature_prepare_structured(nullptr, nullptr, &signature, true, nullptr);' \
+		'  bool applied = r_anal_function_signature_apply(nullptr, nullptr, prepared);' \
+		'  r_anal_function_signature_prepared_free(prepared);' \
+		'  return applied && types;' \
+		'}' \
+		| $(CXX) $(CXXFLAGS) $(R2_CFLAGS) -x c++ - -o /dev/null $(R2_LDFLAGS) $(LDFLAGS) || { echo "r2ghidra requires radare2 ABI 158 or newer with current semantic type APIs and operational-CC-preserving structured preparation; rebuild the matching host SDK" >&2; exit 1; }
+
 # zlib static build
-../subprojects/zlib/libz.a:
+../subprojects/zlib/libz.a: | check-radare2-sdk
 	cd ../subprojects/zlib && CFLAGS="-fPIC" ./configure --static
 	$(MAKE) -C ../subprojects/zlib libz.a
 
@@ -79,7 +114,8 @@ plugins: $(R2G_CORE_PLUGIN) sleighc
 deps=$(R2GHIDRA_OBJS) $(GHIDRA_OBJS) $(R2G_PLUGIN_OBJS)
 
 # zlib's configure rewrites zconf.h, racing any object that includes zlib.h under -j
-$(R2GHIDRA_OBJS) $(GHIDRA_OBJS) $(R2G_PLUGIN_OBJS): | ../subprojects/zlib/libz.a
+$(R2GHIDRA_OBJS) $(GHIDRA_OBJS) $(SLEIGHTC_OBJS) $(R2G_PLUGIN_OBJS): | check-radare2-sdk ../subprojects/zlib/libz.a
+sleighc $(R2G_CORE_PLUGIN) $(R2G_ANAL_PLUGIN): | check-radare2-sdk
 
 asan:
 	LDFLAGS="-fsanitize=address" CFLAGS="-fsanitize=address -g" $(MAKE) -j

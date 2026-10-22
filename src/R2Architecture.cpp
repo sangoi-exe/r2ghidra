@@ -34,39 +34,6 @@ static const std::map<std::string, std::vector<std::string>> cc_map = {
 	{ "ppc-64", { "__stdcall" } }
 };
 
-static bool isFloatReg(RAnal *anal, const char *name) {
-	RRegItem *item = r_reg_get (anal->reg, name, -1);
-	if (!item) {
-		return false;
-	}
-	int type = item->type;
-	r_unref (item);
-	switch (type) {
-	case R_REG_TYPE_FPU:
-	case R_REG_TYPE_VEC64:
-	case R_REG_TYPE_VEC128:
-	case R_REG_TYPE_VEC256:
-	case R_REG_TYPE_VEC512:
-		return true;
-	default:
-		return false;
-	}
-}
-
-static void childPentry(Element *parent, const VarnodeData *vn, bool flt) {
-	auto pentry = child (parent, "pentry", {
-		{ "minsize", "1" },
-		{ "maxsize", std::to_string (vn->size) }
-	});
-	if (flt) {
-		pentry->addAttribute ("storage", "float");
-	}
-	child (pentry, "addr", {
-		{ "space", vn->space->getName () },
-		{ "offset", hex (vn->offset) }
-	});
-}
-
 std::string FilenameFromCore(RCore *core) {
 	if (core && core->bin && core->bin->file) {
 		return core->bin->file;
@@ -91,171 +58,29 @@ const std::vector<LanguageDescription> &R2Architecture::getLanguageDescriptions(
 	return SleighArchitecture::getLanguageDescriptions();
 }
 
-ProtoModel *R2Architecture::protoModelFromR2CC(const char *cc) {
+ProtoModel *R2Architecture::protoModelFromR2CC(const char *cc, bool isEffectiveDefault) {
+	if (!cc || !*cc) {
+		RCoreLock core (getCore ());
+		const char *analysisDefault = r_anal_cc_default (core->anal);
+		return R_STR_ISNOTEMPTY (analysisDefault) ? protoModelFromR2CC (analysisDefault, true) : defaultfp;
+	}
 	auto native = protoModels.find (cc);
-	if (native != protoModels.end ()) {
+	if (native != protoModels.end () && !native->second->isUnknown ()) {
 		return native->second;
 	}
-	auto it = cc_map.find (cc);
-	if (it != cc_map.end ()) {
-		for (const auto &name : it->second) {
-			auto protoIt = protoModels.find (name);
-			if (protoIt != protoModels.end ()) {
-				return protoIt->second;
+	auto mapping = cc_map.find (cc);
+	if (mapping != cc_map.end ()) {
+		for (const auto &name : mapping->second) {
+			auto model = protoModels.find (name);
+			if (model != protoModels.end () && !model->second->isUnknown ()) {
+				return model->second;
 			}
 		}
 	}
-	auto cached = r2CCModels.find (cc);
-	if (cached != r2CCModels.end ()) {
-		return cached->second;
+	if (isEffectiveDefault) {
+		return defaultfp;
 	}
-	ProtoModel *model = nullptr;
-	{
-		RCoreLock core (getCore ());
-		const char *defcc = r_anal_cc_default (core->anal);
-		if (defcc && !strcmp (defcc, cc)) {
-			// the arch default cc is what the cspec default model describes, which is richer than the cc sdb
-			model = defaultfp;
-		}
-	}
-	if (!model) {
-		try {
-			model = buildProtoModelFromR2CC (cc);
-		} catch (const LowlevelError &e) {
-			addWarning ("Building a prototype model for calling convention " + std::string (cc) + " failed: " + e.explain);
-		} catch (const DecoderError &e) {
-			addWarning ("Building a prototype model for calling convention " + std::string (cc) + " failed: " + e.explain);
-		}
-	}
-	r2CCModels[cc] = model;
-	return model;
-}
-
-ProtoModel *R2Architecture::buildProtoModelFromR2CC(const char *cc) {
-	RCoreLock core (getCore ());
-	RAnal *anal = core->anal;
-	if (!translate || !r_anal_cc_exist (anal, cc)) {
-		return nullptr;
-	}
-	int maxargs = r_anal_cc_max_arg (anal, cc);
-	const char *ret = r_anal_cc_ret (anal, cc, 0);
-	if (!ret) {
-		// a model without an output entry can throw ParamUnassignedError mid-decompile
-		return nullptr;
-	}
-	int4 extrapop = defaultfp? defaultfp->getExtraPop (): 0;
-
-	Document doc;
-	doc.setName ("prototype");
-	doc.addAttribute ("name", std::string ("r2:") + cc);
-	doc.addAttribute ("extrapop", extrapop == ProtoModel::extrapop_unknown? "unknown": std::to_string (extrapop));
-
-	auto input = child (&doc, "input");
-	bool stackargs = false;
-	std::vector<const VarnodeData *> gprargs, fltargs;
-	for (int n = 0; n < maxargs && !stackargs; n++) {
-		const char *loc = r_anal_cc_argloc (anal, cc, n, 0, 0);
-		if (!loc || !strcmp (loc, "_")) {
-			continue;
-		}
-		// {grouped} multi-register args are represented by their first register
-		loc = r_anal_cc_location_first (anal, loc);
-		if (!loc) {
-			return nullptr;
-		}
-		if (*loc == '^') {
-			stackargs = true;
-			break;
-		}
-		const VarnodeData *vn = registerVarnodeFromR2Reg (loc);
-		if (!vn) {
-			return nullptr; // a model missing an arg slot would misnumber all later args
-		}
-		(isFloatReg (anal, loc)? fltargs: gprargs).push_back (vn);
-	}
-	// each storage class must form one contiguous pentry section; float goes first like the cspecs do
-	for (const VarnodeData *vn : fltargs) {
-		childPentry (input, vn, true);
-	}
-	for (const VarnodeData *vn : gprargs) {
-		childPentry (input, vn, false);
-	}
-	const char *argn = r_anal_cc_argloc (anal, cc, maxargs, 0, 0);
-	if (!stackargs && argn && argn[0] == '^' && argn[1] != '-') {
-		stackargs = true;
-	}
-	if (stackargs) {
-		// the cc sdb has no arg-save-area info, so stack args start right past any return address
-		ut64 base = extrapop == ProtoModel::extrapop_unknown? 0: (ut64)extrapop;
-		auto pentry = child (input, "pentry", {
-			{ "minsize", "1" },
-			{ "maxsize", "500" },
-			{ "align", std::to_string (translate->getDefaultSize ()) }
-		});
-		child (pentry, "addr", { { "space", "stack" }, { "offset", hex (base) } });
-	}
-	auto output = child (&doc, "output");
-	const char *rloc = r_anal_cc_location_first (anal, ret);
-	const VarnodeData *retvn = rloc && *rloc != '^'? registerVarnodeFromR2Reg (rloc): nullptr;
-	if (!retvn) {
-		return nullptr;
-	}
-	childPentry (output, retvn, isFloatReg (anal, rloc));
-
-#if R2_VERSION_NUMBER >= 60109
-	std::vector<std::pair<const VarnodeData *, bool>> effects;
-	bool anyclobber = false;
-	static const int regtypes[] = {
-		R_REG_TYPE_GPR, R_REG_TYPE_FPU, R_REG_TYPE_VEC64,
-		R_REG_TYPE_VEC128, R_REG_TYPE_VEC256, R_REG_TYPE_VEC512
-	};
-	for (int type : regtypes) {
-		if (!anal->reg->regset[type].regs) {
-			continue;
-		}
-		r_list_foreach_cpp<RRegItem>(anal->reg->regset[type].regs, [&](RRegItem *item) {
-			const VarnodeData *vn = registerVarnodeFromR2Reg (item->name);
-			if (!vn) {
-				return;
-			}
-			for (const auto &e : effects) {
-				if (e.first->space == vn->space && e.first->offset == vn->offset && e.first->size == vn->size) {
-					return;
-				}
-			}
-			bool clob = r_anal_cc_isclobber (anal, cc, item->name);
-			anyclobber |= clob;
-			effects.emplace_back (vn, clob);
-		});
-	}
-	if (anyclobber) {
-		// the sdb clobber/preserve sets are complements, so non-clobbered regs are unaffected
-		auto killed = child (&doc, "killedbycall");
-		auto unaffected = child (&doc, "unaffected");
-		for (const auto &e : effects) {
-			bool contained = false;
-			for (const auto &o : effects) {
-				if (&o != &e && o.first->space == e.first->space && o.first->size > e.first->size
-						&& o.first->offset <= e.first->offset
-						&& o.first->offset + o.first->size >= e.first->offset + e.first->size) {
-					contained = true;
-					break;
-				}
-			}
-			if (contained) {
-				continue; // subregisters ride with their container
-			}
-			child (e.second? killed: unaffected, "addr", {
-				{ "space", e.first->space->getName () },
-				{ "offset", hex (e.first->offset) },
-				{ "size", std::to_string (e.first->size) }
-			});
-		}
-	}
-#endif
-
-	XmlDecode dec (this, &doc);
-	return decodeProto (dec);
+	throw LowlevelError ("Unsupported explicit calling convention " + string (cc));
 }
 
 void R2Architecture::loadRegisters(const Translate *translate) {

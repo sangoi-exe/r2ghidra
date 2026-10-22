@@ -30,59 +30,70 @@ RTypePointerKind R2TypeFactory::pointerKind(const TypePointer *type) const {
 }
 
 Datatype *R2TypeFactory::fromDeclaration(const RTypeDeclNode *node, string *error, TypeResolution &resolution, bool behindPointer, int depth) {
+	if (!node) {
+		return nullptr;
+	}
+	if (node->qualifiers & ~(R_TYPE_DECL_CONST | R_TYPE_DECL_VOLATILE)) {
+		failTypeConstruction ("Unsupported restrict or atomic qualification in native type import");
+	}
+	Datatype *type = fromUnqualifiedDeclaration (node, error, resolution, behindPointer, depth);
+	uint4 qualifiers = 0;
+	if (node->qualifiers & R_TYPE_DECL_CONST) {
+		qualifiers |= Datatype::qualifier_const;
+	}
+	if (node->qualifiers & R_TYPE_DECL_VOLATILE) {
+		qualifiers |= Datatype::qualifier_volatile;
+	}
+	return type ? getQualifiedType (type, qualifiers) : nullptr;
+}
+
+Datatype *R2TypeFactory::fromUnqualifiedDeclaration(const RTypeDeclNode *node, string *error, TypeResolution &resolution, bool behindPointer, int depth) {
 	if (depth > 64) {
 		if (error) {
 			*error = "Declaration nesting limit exceeded";
 		}
 		return nullptr;
 	}
-	if (!node) {
-		return nullptr;
-	}
 	switch (node->kind) {
 	case R_TYPE_DECL_BASE: {
-		std::string name = node->base.name;
-		RTypeKind tagKind = R_TYPE_INVALID;
-		if (name.rfind ("struct ", 0) == 0) {
-			tagKind = R_TYPE_STRUCT;
-			name.erase (0, 7);
-		} else if (name.rfind ("union ", 0) == 0) {
-			tagKind = R_TYPE_UNION;
-			name.erase (0, 6);
-		} else if (name.rfind ("enum ", 0) == 0) {
-			tagKind = R_TYPE_ENUM;
-			name.erase (0, 5);
-		}
-		if (name == "void" && tagKind == R_TYPE_INVALID) {
+		const string name = node->base.name;
+		if (name == "void") {
 			return getTypeVoid ();
 		}
-		if (name.rfind ("func.", 0) == 0 && tagKind == R_TYPE_INVALID) {
-			return queryR2Function (name.substr (5), resolution);
+		if (name.rfind ("func.", 0) == 0) {
+			return findByName (name, resolution, behindPointer);
 		}
 		RCoreLock core (arch->getCore ());
 		const RTypeKind kind = r_type_kind (core->anal->sdb_types, name.c_str ());
-		if (tagKind != R_TYPE_INVALID && kind != R_TYPE_INVALID && kind != tagKind) {
-			if (error) {
-				*error = "Conflicting aggregate tag for " + name;
+		const string rawName = nativeName (name);
+		RTypeKind tagKind = R_TYPE_INVALID;
+		if (name.rfind ("struct ", 0) == 0) {
+			tagKind = R_TYPE_STRUCT;
+		} else if (name.rfind ("union ", 0) == 0) {
+			tagKind = R_TYPE_UNION;
+		} else if (name.rfind ("enum ", 0) == 0) {
+			tagKind = R_TYPE_ENUM;
+		}
+		if (tagKind != R_TYPE_INVALID) {
+			Sdb *tags = r_type_namespace (core->anal->sdb_types, R_TYPE_NAMESPACE_TAG, false);
+			const RTypeKind actualKind = tags ? r_type_kind (tags, rawName.c_str ()) : R_TYPE_INVALID;
+			if (actualKind != R_TYPE_INVALID && actualKind != tagKind) {
+				failTypeConstruction ("Conflicting aggregate tag for " + rawName);
 			}
-			return nullptr;
 		}
 		const RTypeKind aggregateKind = tagKind != R_TYPE_INVALID ? tagKind : kind;
 		if (behindPointer && (aggregateKind == R_TYPE_STRUCT || aggregateKind == R_TYPE_UNION)) {
-			Datatype *base = TypeFactory::findById (name, 0, 0);
+			Datatype *base = TypeFactory::findById (rawName, nativeId (name), 0);
 			const type_metatype meta = aggregateKind == R_TYPE_STRUCT ? TYPE_STRUCT : TYPE_UNION;
 			if (base && base->getMetatype () != meta) {
-				if (error) {
-					*error = "Conflicting aggregate identity for " + name;
-				}
-				return nullptr;
+				failTypeConstruction ("Conflicting aggregate identity for " + name);
 			}
 			if (!base) {
-				base = aggregateKind == R_TYPE_STRUCT ? static_cast<Datatype *>(getTypeStruct (name)) : getTypeUnion (name);
+				base = aggregateKind == R_TYPE_STRUCT ? static_cast<Datatype *>(getTypeStruct (rawName, nativeId (name), name)) : getTypeUnion (rawName, nativeId (name), name);
 			}
-			const string definitionKey = (aggregateKind == R_TYPE_STRUCT ? "struct." : "union.") + name;
-			const char *definition = sdb_const_get (core->anal->sdb_types, definitionKey.c_str (), nullptr);
-			// Opaque pointees need an identity, not a mandatory completion attempt.
+			Sdb *db = r_type_namespace (core->anal->sdb_types, tagKind != R_TYPE_INVALID ? R_TYPE_NAMESPACE_TAG : R_TYPE_NAMESPACE_ORDINARY, false);
+			const string definitionKey = (aggregateKind == R_TYPE_STRUCT ? "struct." : "union.") + rawName;
+			const char *definition = db ? sdb_const_get (db, definitionKey.c_str (), nullptr) : nullptr;
 			if (base->isIncomplete () && definition && *definition) {
 				resolution.pendingAggregates.push_back (base);
 			}
@@ -134,11 +145,11 @@ Datatype *R2TypeFactory::fromDeclaration(const RTypeDeclNode *node, string *erro
 		return getTypeArray (static_cast<int4>(count), element);
 	}
 	case R_TYPE_DECL_FUNCTION: {
-		if (!arch->defaultfp) {
-			return getTypeCode ();
-		}
 		PrototypePieces proto;
-		proto.model = arch->defaultfp;
+		proto.model = arch->protoModelFromR2CC (nullptr);
+		if (!proto.model) {
+			failTypeConstruction ("Missing prototype model for anonymous function type");
+		}
 		proto.firstVarArgSlot = -1;
 		proto.outtype = fromDeclaration (node->child, error, resolution, false, depth + 1);
 		if (!proto.outtype || proto.outtype->getMetatype () == TYPE_ARRAY || proto.outtype->getMetatype () == TYPE_CODE) {
@@ -181,7 +192,14 @@ RTypeDecl *R2TypeFactory::toDeclaration(Datatype *type, int depth) const {
 	Declaration decl (R_NEW0 (RTypeDecl), r_type_decl_free);
 	decl->type = R_NEW0 (RTypeDeclNode);
 	RTypeDeclNode *node = decl->type;
-	if (type->getTypedef ()) {
+	const uint4 qualifiers = type->getTypedef () ? type->getDeclarationQualifiers () : type->getQualifiers ();
+	if (qualifiers & Datatype::qualifier_const) {
+		node->qualifiers |= R_TYPE_DECL_CONST;
+	}
+	if (qualifiers & Datatype::qualifier_volatile) {
+		node->qualifiers |= R_TYPE_DECL_VOLATILE;
+	}
+	if (type->getTypedef () || isFunctionRecord (type)) {
 		node->kind = R_TYPE_DECL_BASE;
 		node->base.name = strdup (type->getName ().c_str ());
 		return decl.release ();
@@ -218,7 +236,8 @@ RTypeDecl *R2TypeFactory::toDeclaration(Datatype *type, int depth) const {
 	}
 	case TYPE_CODE: {
 		const FuncProto *proto = static_cast<TypeCode *>(type)->getPrototype ();
-		if (!proto) {
+		const ProtoModel *defaultModel = arch->protoModelFromR2CC (nullptr);
+		if (!proto || proto->isModelUnknown () || !defaultModel || proto->getModelName () != defaultModel->getName ()) {
 			return nullptr;
 		}
 		node->kind = R_TYPE_DECL_FUNCTION;
@@ -275,7 +294,7 @@ RTypeDecl *R2TypeFactory::toDeclaration(Datatype *type, int depth) const {
 		if (type->getName ().empty ()) {
 			return nullptr;
 		}
-		node->base.name = strdup (type->getName ().c_str ());
+		node->base.name = strdup (declarationName (type).c_str ());
 		break;
 	default:
 		return nullptr;

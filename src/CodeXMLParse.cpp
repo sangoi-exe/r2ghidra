@@ -11,9 +11,6 @@
 #include <r_util.h>
 #include "r_util/r_xml.h"
 
-#if R2_VERSION_NUMBER < 60104
-#error r2ghidra requires radare2 >= 6.1.4 for the rxml API
-#endif
 #include <sstream>
 #include <string>
 

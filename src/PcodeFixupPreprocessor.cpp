@@ -3,8 +3,7 @@
 
 #include "PcodeFixupPreprocessor.h"
 #include "R2LoadImage.h"
-#include "R2FlagCompat.h"
-#include "R2TypeCompat.h"
+#include "R2FlagLookup.h"
 #include "R2TypeFactory.h"
 #include "R2Utils.h"
 
@@ -66,10 +65,6 @@ static std::string normalize_callee(const char *raw) {
 	const size_t dot = n.rfind ('.');
 	return (dot != std::string::npos)? n.substr (dot + 1): n;
 }
-
-#if !defined(R2_ABIVERSION) || R2_ABIVERSION < 69
-R_VEC_TYPE (RVecAnalRef, RAnalRef);
-#endif
 
 static std::string first_reg_from_values(RVecRArchValue *values) {
 	RArchValue *val = RVecRArchValue_at (values, 0);
@@ -403,7 +398,7 @@ static bool parse_variadic_sig(Sdb *tdb, const char *callee, VariadicSig &sig) {
 	bool ok = false;
 	if (r_type_func_exist (tdb, fname)) {
 		int argc = 0;
-		countargs (tdb, fname, &argc);
+		r_type_func_args_count (tdb, fname, &argc);
 		for (int i = 0; i < argc; i++) {
 			// the vararg slot is stored as `,...` so the "..." marker lands in the name, not the type
 			const char *an = r_type_func_args_name (tdb, fname, i);
@@ -464,7 +459,6 @@ static bool read_format_string(RCore *core, ut64 addr, std::string &out) {
 
 // false on any conversion we can't model, so the caller skips the override
 static bool parse_format_conversions(const char *fmt, std::vector<std::string> &out) {
-#if R2_ABIVERSION >= 112
 	// the same parser, now in r2 core; bits is irrelevant in types mode
 	char *csv = r_str_printfmt (fmt, 0, 0);
 	if (!csv) {
@@ -483,113 +477,14 @@ static bool parse_format_conversions(const char *fmt, std::vector<std::string> &
 	}
 	free (csv);
 	return true;
-#else
-	// TODO: drop this fallback once the minimum r2 is a release with ABI >= 112
-	for (const char *p = fmt; *p; p++) {
-		if (*p != '%') {
-			continue;
-		}
-		p++;
-		if (*p == '%') {
-			continue;
-		}
-		if (*p == '\0') {
-			return false;
-		}
-		const char *q = p;
-		while (*q >= '0' && *q <= '9') {
-			q++;
-		}
-		if (*q == '$') {
-			return false; // positional %m$ unsupported
-		}
-		while (*p && strchr ("-+ #0'", *p)) {
-			p++;
-		}
-		if (*p == '*') {
-			out.push_back ("int");
-			p++;
-		} else {
-			while (*p >= '0' && *p <= '9') {
-				p++;
-			}
-		}
-		if (*p == '.') {
-			p++;
-			if (*p == '*') {
-				out.push_back ("int");
-				p++;
-			} else {
-				while (*p >= '0' && *p <= '9') {
-					p++;
-				}
-			}
-		}
-		int isize = 4;     // default-promoted int
-		bool longdbl = false;
-		if (*p == 'h') {
-			p++;
-			if (*p == 'h') {
-				p++;
-			}
-		} else if (*p == 'l') {
-			p++;
-			if (*p == 'l') {
-				p++;
-				isize = 8;
-			} else {
-				isize = 0; // long
-			}
-		} else if (*p == 'L') {
-			p++;
-			longdbl = true;
-		} else if (*p == 'j' || *p == 'q') {
-			p++;
-			isize = 8;
-		} else if (*p == 'z' || *p == 't') {
-			p++;
-			isize = 0;
-		}
-		switch (*p) {
-		case 'd': case 'i':
-			out.push_back (isize == 8? "long long": isize == 0? "long": "int");
-			break;
-		case 'u': case 'o': case 'x': case 'X':
-			out.push_back (isize == 8? "unsigned long long": isize == 0? "unsigned long": "unsigned int");
-			break;
-		case 'c':
-			out.push_back ("int");
-			break;
-		case 's':
-			out.push_back ("char *");
-			break;
-		case 'p':
-			out.push_back ("void *");
-			break;
-		case 'n':
-			out.push_back ("int *");
-			break;
-		case 'f': case 'F': case 'e': case 'E': case 'g': case 'G': case 'a': case 'A':
-			out.push_back (longdbl? "long double": "double");
-			break;
-		default:
-			return false;
-		}
-	}
-	return true;
-#endif
 }
 
 static FuncProto *build_locked_proto(R2Architecture &arch, const char *cc, const char *callee,
 		const VariadicSig &sig, const std::vector<std::string> &convs) {
-	ProtoModel *model = cc? arch.protoModelFromR2CC (cc): nullptr;
-	if (!model) {
-		model = arch.defaultfp;
-	}
+	ProtoModel *model = arch.protoModelFromR2CC (cc);
 	if (!model) {
 		return nullptr;
 	}
-	const int4 asz = arch.getDefaultCodeSpace ()->getAddrSize ();
 	std::string err;
 
 	PrototypePieces pp;
@@ -598,12 +493,12 @@ static FuncProto *build_locked_proto(R2Architecture &arch, const char *cc, const
 	pp.firstVarArgSlot = -1; // locked, not varargs => all params wired (bypasses the liveness trim)
 	pp.outtype = !sig.ret.empty ()? arch.getTypeFactory ()->fromCString (sig.ret.c_str (), &err): nullptr;
 	if (!pp.outtype) {
-		pp.outtype = arch.types->getBase (4, TYPE_INT);
+		throw LowlevelError ("Unavailable return type for format-call override " + string (callee));
 	}
 	for (size_t i = 0; i < sig.fixedTypes.size (); i++) {
 		Datatype *t = arch.getTypeFactory ()->fromCString (sig.fixedTypes[i].c_str (), &err);
 		if (!t) {
-			t = arch.types->getBase (asz, TYPE_UNKNOWN);
+			throw LowlevelError ("Unavailable parameter type for format-call override " + string (callee));
 		}
 		pp.intypes.push_back (t);
 		pp.innames.push_back (sig.fixedNames[i]);
@@ -639,13 +534,11 @@ static void override_format_call(RCore *core, R2Architecture &arch, Funcdata *gh
 	if (!parse_variadic_sig (tdb, callee.c_str (), sig) || sig.firstVararg < 1) {
 		return;
 	}
-	const char *cc = r_anal_cc_func (core->anal, callee.c_str ());
-	const char *freg = r_anal_cc_argloc (core->anal, cc, sig.firstVararg - 1, 0, 0);
-	if (!freg && !r_anal_cc_exist (core->anal, cc)) {
-		// the C parsers stamp cc=cdecl on every td/to prototype, and cdecl is undefined outside x86-32
-		cc = r_anal_cc_default (core->anal);
-		freg = r_anal_cc_argloc (core->anal, cc, sig.firstVararg - 1, 0, 0);
-	}
+	const char *sourceCC = sdb_const_getf (tdb, nullptr, "func.%s.cc", callee.c_str ());
+	// Validate supplied models before consulting host register-location records.
+	arch.protoModelFromR2CC (sourceCC);
+	const char *cc = R_STR_ISNOTEMPTY (sourceCC) ? sourceCC : r_anal_cc_default (core->anal);
+	const char *freg = cc ? r_anal_cc_argloc (core->anal, cc, sig.firstVararg - 1, 0, 0) : nullptr;
 	auto it = freg? reg_strings.find (tolower (freg)): reg_strings.end ();
 	if (it == reg_strings.end ()) {
 		return;
@@ -655,7 +548,7 @@ static void override_format_call(RCore *core, R2Architecture &arch, Funcdata *gh
 	if (!read_format_string (core, it->second, fmt) || !parse_format_conversions (fmt.c_str (), convs)) {
 		return;
 	}
-	FuncProto *fp = build_locked_proto (arch, cc, callee.c_str (), sig, convs);
+	FuncProto *fp = build_locked_proto (arch, sourceCC, callee.c_str (), sig, convs);
 	if (fp) {
 		ghFunc->getOverride ().insertProtoOverride (Address (space, op->addr), fp);
 	}

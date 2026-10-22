@@ -1852,18 +1852,13 @@ static constexpr int ESIL_PARM_FLOAT = 127; // Avoid conflict
 static bool esil_pushnum_float(REsil *esil, long double num) {
 	char str[64];
 	snprintf (str, sizeof (str) - 1, "%.*LeF", DECIMAL_DIG, num);
-#if R2_ABIVERSION >= 87
 	return r_esil_push (esil, r_strs_from (str));
-#else
-	return r_esil_push (esil, str);
-#endif
 }
 
 static bool sleigh_esil_consts_pick(REsil *esil) {
 	if (!esil || !esil->stack) {
 		return false;
 	}
-#if R2_ABIVERSION >= 87
 	RStrs idx = r_esil_pop (esil);
 	ut64 i;
 
@@ -1891,44 +1886,11 @@ static bool sleigh_esil_consts_pick(REsil *esil) {
 		return false;
 	}
 	return true;
-#else
-	char *idx = r_esil_pop (esil);
-	ut64 i;
-	int ret = false;
-
-	if (R_ESIL_PARM_REG == r_esil_get_parm_type(esil, idx)) {
-		R_LOG_DEBUG ("sleigh_esil_consts_pick: argument is consts only");
-		goto end;
-	}
-	if (!idx || !r_esil_get_parm(esil, idx, &i)) {
-		R_LOG_DEBUG ("esil_pick: invalid index number");
-		goto end;
-	}
-	if (esil->stackptr < i) {
-		R_LOG_DEBUG ("esil_pick: index out of stack bounds.");
-		goto end;
-	}
-	if (!esil->stack[esil->stackptr - i]) {
-		R_LOG_DEBUG ("esil_pick: undefined element.");
-		goto end;
-	}
-	if (!r_esil_push (esil, esil->stack[esil->stackptr - i])) {
-		R_LOG_DEBUG ("ESIL stack is full.");
-		esil->trap = 1;
-		esil->trap_code = 1;
-		goto end;
-	}
-	ret = true;
-end:
-	free (idx);
-	return ret;
-#endif
 }
 
 static bool sleigh_esil_popcount(REsil *esil) {
 	bool ret = false;
 	ut64 s, res = 0;
-#if R2_ABIVERSION >= 87
 	RStrs src = r_esil_pop (esil);
 	if (!r_strs_empty (src)) {
 		if (r_esil_get_parm (esil, src, &s)) {
@@ -1943,23 +1905,6 @@ static bool sleigh_esil_popcount(REsil *esil) {
 	} else {
 		R_LOG_DEBUG ("sleigh_esil_popcount: fail to get element from stack.");
 	}
-#else
-	char *src = r_esil_pop (esil);
-	if (src) {
-		if (r_esil_get_parm (esil, src, &s)) {
-			while (s) {
-				s &= s - 1;
-				++res;
-			}
-			ret = r_esil_pushnum (esil, res);
-		} else {
-			R_LOG_DEBUG ("sleigh_esil_popcount: invalid parameters.");
-		}
-		free (src);
-	} else {
-		R_LOG_DEBUG ("sleigh_esil_popcount: fail to get element from stack.");
-	}
-#endif
 	return ret;
 }
 
@@ -1985,12 +1930,7 @@ extern "C" int esil_sleigh_fini(REsil *esil) {
 	return true;
 }
 
-#if R2_ABIVERSION >= 109
 extern "C" bool r2ghidra_esilcb(RArchSession *as, REsil *esil, RArchEsilAction action) {
-#else
-extern "C" bool r2ghidra_esilcb(RArchSession *as, RArchEsilAction action) {
-	REsil *esil = as->arch->esil;
-#endif
 	if (!esil) {
 		R_LOG_ERROR ("esil is null");
 		return false;
@@ -2021,11 +1961,7 @@ extern "C" RList *r2ghidra_preludes(RArchSession *as) {
 	const char *cpu = as->config->cpu;
 	// reuse r2 preludes
 	if (R_STR_ISNOTEMPTY (cpu)) {
-#if R2_ABIVERSION >= 84
 		r_list_foreach (as->arch->libstore->plugins, iter, _plugin) {
-#else
-		r_list_foreach (as->arch->plugins, iter, _plugin) {
-#endif
 			RArchPlugin *plugin = (RArchPlugin*)_plugin;
 			if (plugin->preludes && plugin->meta.name && !r_str_casecmp (plugin->meta.name, cpu)) {
 				return plugin->preludes (as);

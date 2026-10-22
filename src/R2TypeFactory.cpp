@@ -3,7 +3,6 @@
 
 #include "R2TypeFactory.h"
 #include "R2Architecture.h"
-#include "R2TypeCompat.h"
 #include "fspec.hh"
 
 #include <r_core.h>
@@ -52,13 +51,56 @@ void R2TypeFactory::completeResolution(TypeResolution &resolution) {
 	for (size_t i = 0; i < resolution.pendingAggregates.size (); i++) {
 		Datatype *pointee = resolution.pendingAggregates[i];
 		if (pointee->isIncomplete ()) {
-			Datatype *type = queryR2 (pointee->getName (), resolution);
+			Datatype *type = queryR2 (declarationName (pointee), resolution);
 			if (!type || type->isIncomplete ()) {
 				failTypeConstruction ("Failed to construct complete aggregate " + pointee->getName ());
 			}
 		}
 	}
 	resolveIncompleteTypedefs ();
+}
+
+
+string R2TypeFactory::nativeName(const string &name) {
+	for (const char *prefix : { "struct ", "union ", "enum " }) {
+		const size_t length = strlen (prefix);
+		if (name.compare (0, length, prefix) == 0) {
+			return name.substr (length);
+		}
+	}
+	return name;
+}
+
+uint8 R2TypeFactory::nativeId(const string &name) {
+	const string rawName = nativeName (name);
+	std::unique_ptr<char, decltype(&free)> key (r_type_identifier_key (rawName.c_str (), rawName == name ? R_TYPE_NAMESPACE_ORDINARY : R_TYPE_NAMESPACE_TAG), free);
+	if (!key) {
+		throw LowlevelError ("Unable to allocate native type identity");
+	}
+	return Datatype::hashName (key.get ());
+}
+
+string R2TypeFactory::declarationName(const Datatype *type) {
+	const Datatype *base = type->getUnqualified ();
+	const string &name = base->getName ();
+	if (!base->getTypedef () && base->getId () == nativeId ("struct " + name)) {
+		switch (base->getMetatype ()) {
+		case TYPE_STRUCT:
+			return "struct " + name;
+		case TYPE_UNION:
+			return "union " + name;
+		case TYPE_ENUM_INT:
+		case TYPE_ENUM_UINT:
+			return "enum " + name;
+		default:
+			break;
+		}
+	}
+	return name;
+}
+
+bool R2TypeFactory::isFunctionRecord(const Datatype *type) const {
+	return type->getMetatype () == TYPE_CODE && !type->getTypedef () && type->getName ().rfind ("func.", 0) == 0;
 }
 
 
@@ -230,9 +272,6 @@ static bool get_builtin_spec(const R2TypeFactory *factory, const std::string &na
 	int long_count = 0;
 	int4 explicit_size = 0;
 	while (ss >> token) {
-		if (token == "const" || token == "volatile" || token == "restrict") {
-			continue;
-		}
 		if (token == "unsigned") {
 			is_unsigned = true;
 			continue;
@@ -349,10 +388,7 @@ static Datatype *base_or_unknown(R2TypeFactory *factory, int4 size, type_metatyp
 }
 
 static Datatype *make_typedef(R2TypeFactory *factory, Datatype *base, const std::string &name) {
-	Datatype *typedefd = factory->getTypedef(base, name, 0, 0);
-	factory->setName(typedefd, name);
-	factory->setName(base, base->getName());
-	return typedefd;
+	return factory->getTypedef (base, name, 0, 0);
 }
 
 Datatype *R2TypeFactory::queryR2Base(const string &n) {
@@ -383,7 +419,9 @@ Datatype *R2TypeFactory::queryR2Base(const string &n) {
 
 Datatype *R2TypeFactory::queryR2Struct(const string &n, TypeResolution &resolution) {
 	RCoreLock core(arch->getCore ());
-	std::unique_ptr<RAnalBaseType, decltype(&r_anal_base_type_free)> native (r_anal_get_base_type (core->anal, n.c_str ()), r_anal_base_type_free);
+	const string rawName = nativeName (n);
+	const RTypeNamespace space = rawName == n ? R_TYPE_NAMESPACE_ORDINARY : R_TYPE_NAMESPACE_TAG;
+	std::unique_ptr<RAnalBaseType, decltype(&r_anal_base_type_free)> native (r_anal_get_base_type (core->anal, rawName.c_str (), space), r_anal_base_type_free);
 	if (!native) {
 		return nullptr;
 	}
@@ -392,7 +430,7 @@ Datatype *R2TypeFactory::queryR2Struct(const string &n, TypeResolution &resoluti
 	}
 	std::vector<TypeField> fields;
 	try {
-		TypeStruct *r = getTypeStruct(n);
+		TypeStruct *r = getTypeStruct (rawName, nativeId (n), n);
 		int4 maxAlign = 1;
 		int4 layoutAlign = 0;
 		int4 structSize = 0;
@@ -466,7 +504,9 @@ Datatype *R2TypeFactory::queryR2Struct(const string &n, TypeResolution &resoluti
 
 Datatype *R2TypeFactory::queryR2Union(const string &n, TypeResolution &resolution) {
 	RCoreLock core(arch->getCore ());
-	std::unique_ptr<RAnalBaseType, decltype(&r_anal_base_type_free)> native (r_anal_get_base_type (core->anal, n.c_str ()), r_anal_base_type_free);
+	const string rawName = nativeName (n);
+	const RTypeNamespace space = rawName == n ? R_TYPE_NAMESPACE_ORDINARY : R_TYPE_NAMESPACE_TAG;
+	std::unique_ptr<RAnalBaseType, decltype(&r_anal_base_type_free)> native (r_anal_get_base_type (core->anal, rawName.c_str (), space), r_anal_base_type_free);
 	if (!native) {
 		arch->addWarning ("Failed to load union " + n + " from sdb.");
 		return nullptr;
@@ -477,7 +517,7 @@ Datatype *R2TypeFactory::queryR2Union(const string &n, TypeResolution &resolutio
 	}
 	std::vector<TypeField> fields;
 	try {
-		TypeUnion *r = getTypeUnion(n);
+		TypeUnion *r = getTypeUnion (rawName, nativeId (n), n);
 		int4 maxAlign = 1;
 		int4 unionSize = 0;
 		RAnalTypeMember *member;
@@ -576,7 +616,7 @@ Datatype *R2TypeFactory::queryR2Enum(const string &n, TypeResolution &resolution
 		return nullptr;
 	}
 	try {
-		auto enumType = getTypeEnum(n);
+		auto enumType = getTypeEnum (nativeName (n), nativeId (n), n);
 		map<uintb,string> namemap;
 		TypeEnum::assignValues(namemap,namelist,vallist,assignlist,enumType);
 		setEnumValues(namemap, enumType);
@@ -597,7 +637,7 @@ Datatype *R2TypeFactory::queryR2Function(const string &n, TypeResolution &resolu
 		failTypeConstruction ("Unavailable parameter-list knowledge for function type " + n);
 	}
 	int arg_count = 0;
-	if (prototype == R_TYPE_FUNC_PROTOTYPE_FIXED && !countargs (sdb, n.c_str (), &arg_count)) {
+	if (prototype == R_TYPE_FUNC_PROTOTYPE_FIXED && !r_type_func_args_count (sdb, n.c_str (), &arg_count)) {
 		failTypeConstruction ("Unavailable parameter count for function type " + n);
 	}
 	if (!ret) {
@@ -605,10 +645,10 @@ Datatype *R2TypeFactory::queryR2Function(const string &n, TypeResolution &resolu
 	}
 
 	PrototypePieces proto;
-	if (!arch->defaultfp) {
+	proto.model = arch->protoModelFromR2CC (sdb_const_getf (sdb, nullptr, "func.%s.cc", n.c_str ()));
+	if (!proto.model) {
 		failTypeConstruction ("Missing prototype model for function type " + n);
 	}
-	proto.model = arch->defaultfp;
 	proto.name = n;
 	proto.firstVarArgSlot = prototype == R_TYPE_FUNC_PROTOTYPE_UNSPECIFIED ? 0 : -1;
 	proto.outtype = fromCStringResolved (ret, nullptr, resolution);
@@ -646,7 +686,7 @@ Datatype *R2TypeFactory::queryR2Function(const string &n, TypeResolution &resolu
 
 	}
 
-	return getTypeCode(proto);
+	return getTypeCode (proto, "func." + n, nativeId ("func." + n));
 }
 
 Datatype *R2TypeFactory::queryR2Typedef(const string &n, TypeResolution &resolution, bool behindPointer) {
@@ -660,10 +700,7 @@ Datatype *R2TypeFactory::queryR2Typedef(const string &n, TypeResolution &resolut
 	if (!resolved) {
 		return nullptr;
 	}
-	Datatype *typedefd = getTypedef (resolved, n, 0, 0);
-	setName (typedefd, n); // this removes the old name from the nametree
-	setName (resolved, resolved->getName()); // add the old name back
-	return typedefd;
+	return getTypedef (resolved, n, 0, 0);
 }
 
 Datatype *R2TypeFactory::queryR2(const string &n, TypeResolution &resolution, bool behindPointer) {
@@ -682,6 +719,9 @@ Datatype *R2TypeFactory::queryR2(const string &n, TypeResolution &resolution, bo
 	} entry{resolution.stackTypes, n};
 
 	RCoreLock core (arch->getCore ());
+	if (n.rfind ("func.", 0) == 0) {
+		return queryR2Function (n.substr (5), resolution);
+	}
 	int kind = r_type_kind (core->anal->sdb_types, n.c_str ());
 	switch (kind) {
 	case R_TYPE_BASIC:
@@ -691,7 +731,7 @@ Datatype *R2TypeFactory::queryR2(const string &n, TypeResolution &resolution, bo
 		try {
 			Datatype *type = kind == R_TYPE_STRUCT ? queryR2Struct (n, resolution) : queryR2Union (n, resolution);
 			if (!type || type->isIncomplete ()) {
-				throw LowlevelError (string ("Failed to construct complete ") + (kind == R_TYPE_STRUCT ? "struct " : "union ") + n);
+				throw LowlevelError ("Failed to construct complete " + (nativeName (n) == n ? string (kind == R_TYPE_STRUCT ? "struct " : "union ") + n : n));
 			}
 			return type;
 		} catch (const LowlevelError &error) {
@@ -704,7 +744,7 @@ Datatype *R2TypeFactory::queryR2(const string &n, TypeResolution &resolution, bo
 	case R_TYPE_TYPEDEF:
 		return queryR2Typedef (n, resolution, behindPointer);
 	case R_TYPE_FUNCTION:
-		return queryR2Function (n, resolution);
+		return findByName ("func." + n, resolution, behindPointer);
 	default:
 		return nullptr;
 	}
@@ -713,7 +753,7 @@ Datatype *R2TypeFactory::queryR2(const string &n, TypeResolution &resolution, bo
 Datatype *R2TypeFactory::findByIdResolved(const string &n, uint8 id, int4 sz, TypeResolution &resolution, Datatype *r, bool resolvedBase, bool behindPointer) {
 	// resolve basic types
 	if (!resolvedBase) {
-		r = TypeFactory::findById (n, id, sz);
+		r = TypeFactory::findById (nativeName (n), id ? id : nativeId (n), sz);
 	}
 	if (r == nullptr && n.empty()) {
 		int4 fallback_size = (sz > 0) ? sz : 1;
@@ -728,11 +768,7 @@ Datatype *R2TypeFactory::findByIdResolved(const string &n, uint8 id, int4 sz, Ty
 		const bool needs_parse =
 			n.find('*') != std::string::npos ||
 			n.rfind("const ", 0) == 0 ||
-			n.rfind("volatile ", 0) == 0 ||
-			n.rfind("struct ", 0) == 0 ||
-			n.rfind("enum ", 0) == 0 ||
-			n.rfind("union ", 0) == 0 ||
-			n.rfind("func.", 0) == 0;
+			n.rfind("volatile ", 0) == 0;
 		if (needs_parse) {
 			r = fromCStringResolved (n, nullptr, resolution);
 		}
@@ -743,7 +779,7 @@ Datatype *R2TypeFactory::findByIdResolved(const string &n, uint8 id, int4 sz, Ty
 			r = base_or_unknown (this, builtin.size, builtin.meta);
 		}
 	}
-	return r;
+	return r && id && r->getId () != id ? nullptr : r;
 }
 
 Datatype *R2TypeFactory::findById(const string &n, uint8 id, int4 sz, std::set<std::string> &stackTypes) {
@@ -757,13 +793,13 @@ Datatype *R2TypeFactory::findById(const string &n, uint8 id, int4 sz, std::set<s
 // overriden call
 Datatype *R2TypeFactory::findById(const string &n, uint8 id, int4 sz) {
 	checkTypeConstruction ();
-	Datatype *r = TypeFactory::findById (n, id, sz);
+	Datatype *r = TypeFactory::findById (nativeName (n), id ? id : nativeId (n), sz);
 	// Native typerefs may refer to opaque identities; declarations check completeness separately.
 	if (r) {
 		return r;
 	}
 	// The slow path resolves declared names independently of the requested storage size.
-	const bool cacheable = !n.empty () && sz <= 0;
+	const bool cacheable = !n.empty () && !id && sz <= 0;
 	if (cacheable) {
 		auto it = lookupCache.find (n);
 		if (it != lookupCache.end ()) {
@@ -812,6 +848,7 @@ Datatype *R2TypeFactory::fromCStringResolved(const string &str, string *error, T
 		}
 		return entry.type;
 	}
+	RCoreLock core (arch->getCore ());
 	char *parseError = nullptr;
 	std::unique_ptr<RTypeDecl, decltype(&r_type_decl_free)> decl (r_type_decl_parse (key.c_str (), R_TYPE_DECL_CONTEXT_ABSTRACT, core->anal->sdb_types, &parseError), r_type_decl_free);
 	if (!decl) {

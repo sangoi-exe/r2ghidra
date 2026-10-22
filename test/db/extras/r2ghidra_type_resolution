@@ -101,9 +101,9 @@ e r2ghidra.lang=x86:LE:64:default:gcc
 tk OpaqueS=struct
 tk OpaqueU=union
 tk SA=typedef
-tk typedef.SA=struct OpaqueS
+tk typedef.SA=OpaqueS
 tk UA=typedef
-tk typedef.UA=union OpaqueU
+tk typedef.UA=OpaqueU
 "afs void opaque(SA *s, UA *u, struct TaggedS *t, union TaggedU *v)"
 afc amd64
 pdgd~:2..14
@@ -127,18 +127,18 @@ EXPECT=<<EOF
     <def name="UA" id="0xc0000000007b5541">
       <typeref name="OpaqueU" id="0xd0b1db6171756653"/>
     </def>
-    <type name="TaggedU" id="0xc5ff6199323334ab" size="0" metatype="union" alignment="1"/>
+    <type name="TaggedU" label="union TaggedU" id="0xdb510c1d136dfd7b" size="0" metatype="union" alignment="1"/>
     <type name="OpaqueS" id="0xd0b1db6171756651" size="0" metatype="struct" alignment="1"/>
     <def name="SA" id="0xc0000000007b5341">
       <typeref name="OpaqueS" id="0xd0b1db6171756651"/>
     </def>
-    <type name="TaggedS" id="0xc5ff619932333755" size="0" metatype="struct" alignment="1"/>
+    <type name="TaggedS" label="struct TaggedS" id="0xdb510c1d136dfd79" size="0" metatype="struct" alignment="1"/>
   </typegrp>
-void opaque(SA *s,UA *u,TaggedS *t,TaggedU *v)
+void opaque(SA *s,UA *u,struct TaggedS *t,union TaggedU *v)
 {"errors":["Ghidra Decompiler Error: Failed to construct complete struct OpaqueS"]}
 {"errors":["Ghidra Decompiler Error: Failed to construct complete union OpaqueU"]}
-{"errors":["Ghidra Decompiler Error: Failed to match arg type struct TaggedS for function incomplete: Unable to resolve type 'TaggedS'"]}
-{"errors":["Ghidra Decompiler Error: Failed to match arg type union TaggedU for function incomplete: Unable to resolve type 'TaggedU'"]}
+{"errors":["Ghidra Decompiler Error: Failed to match arg type struct TaggedS for function incomplete: Unable to resolve type 'struct TaggedS'"]}
+{"errors":["Ghidra Decompiler Error: Failed to match arg type union TaggedU for function incomplete: Unable to resolve type 'union TaggedU'"]}
 EOF
 RUN
 
@@ -151,10 +151,10 @@ e r2ghidra.lang=x86:LE:64:default:gcc
 "afs int32_t incomplete(void)"
 afc amd64
 tk Opaque=struct
-tk func.incomplete.ret=struct Opaque
+tk func.incomplete.ret=Opaque
 pdgj
 tk Opaque=union
-tk func.incomplete.ret=union Opaque
+tk func.incomplete.ret=Opaque
 pdgj
 EOF
 EXPECT=<<EOF
@@ -171,15 +171,15 @@ af
 e r2ghidra.lang=x86:LE:64:default:gcc
 tk BA=typedef
 tk typedef.BA=union B
-tk A=union
-tk union.A=p
-tk union.A.p=BA *,0,0
-tk type.A.size=64
-tk B=union
-tk union.B=a,value
-tk union.B.a=union A,0,0
-tk union.B.value=unsigned long long,0,0
-tk type.B.size=64
+tk tags/A=union
+tk tags/union.A=p
+tk tags/union.A.p=BA *,0,0
+tk tags/type.A.size=64
+tk tags/B=union
+tk tags/union.B=a,value
+tk tags/union.B.a=union A,0,0
+tk tags/union.B.value=unsigned long long,0,0
+tk tags/type.B.size=64
 "afs uint64_t read_a(union A *p)"
 afc amd64
 pdgd~:2..22
@@ -191,58 +191,58 @@ pdg~return
 EOF
 EXPECT=<<EOF
   <typegrp>
-    <def name="BA" id="0xc00000feab85e941">
-      <typeref name="B" id="0xc0000000feab85e9"/>
-    </def>
-    <type name="A" id="0xc000000000007b41" size="8" metatype="union" alignment="8">
+    <type name="A" label="union A" id="0xeb85df616773303f" size="8" metatype="union" alignment="8">
       <field name="p" offset="0">
         <type name="" size="8" metatype="ptr">
           <typeref name="BA" id="0xc00000feab85e941"/>
         </type>
       </field>
     </type>
-    <type name="B" id="0xc0000000feab85e9" size="8" metatype="union" alignment="8">
+    <type name="B" label="union B" id="0xeb85df6199d8ceeb" size="8" metatype="union" alignment="8">
       <field name="a" offset="0">
-        <typeref name="A" id="0xc000000000007b41"/>
+        <typeref name="A" id="0xeb85df616773303f"/>
       </field>
       <field name="value" offset="0">
         <typeref name="uint64_t" id="0xe0c26e8a639f5ff9"/>
       </field>
     </type>
+    <def name="BA" id="0xc00000feab85e941">
+      <typeref name="B" id="0xeb85df6199d8ceeb"/>
+    </def>
   </typegrp>
     return p->p[1].value;
   <typegrp>
-    <def name="BA" id="0xc00000feab85e941">
-      <typeref name="B" id="0xc0000000feab85e9"/>
-    </def>
-    <type name="A" id="0xc000000000007b41" size="8" metatype="union" alignment="8">
+    <type name="A" label="union A" id="0xeb85df616773303f" size="8" metatype="union" alignment="8">
       <field name="p" offset="0">
         <type name="" size="8" metatype="ptr">
           <typeref name="BA" id="0xc00000feab85e941"/>
         </type>
       </field>
     </type>
-    <type name="B" id="0xc0000000feab85e9" size="8" metatype="union" alignment="8">
+    <type name="B" label="union B" id="0xeb85df6199d8ceeb" size="8" metatype="union" alignment="8">
       <field name="a" offset="0">
-        <typeref name="A" id="0xc000000000007b41"/>
+        <typeref name="A" id="0xeb85df616773303f"/>
       </field>
       <field name="value" offset="0">
         <typeref name="uint64_t" id="0xe0c26e8a639f5ff9"/>
       </field>
     </type>
+    <def name="BA" id="0xc00000feab85e941">
+      <typeref name="B" id="0xeb85df6199d8ceeb"/>
+    </def>
   </typegrp>
     return (*&p->a)[1].value;
 EOF
 RUN
 
-NAME=direct Sdb chained aliases complete before a later by value member and array stride
+NAME=direct Sdb ordinary chained aliases complete before a later by value member and array stride
 FILE=hex://488b07488b4008c3
 ARGS=-a x86 -b 64 -e log.level=0
 CMDS=<<EOF
 af
 e r2ghidra.lang=x86:LE:64:default:gcc
 tk BA=typedef
-tk typedef.BA=union B
+tk typedef.BA=B
 tk BAA=typedef
 tk typedef.BAA=BA
 tk A=union
@@ -276,20 +276,24 @@ af
 e r2ghidra.lang=x86:LE:64:default:gcc
 "afs void literals(uint8_t (*decimal)[8], uint8_t (*octal)[010], uint8_t (*hexadecimal)[0x8], uint8_t (*precedence)[1|2+3])"
 afc amd64
+tk~^func.literals.cc=~?
 afs
 pdgd~arraysize=
 pdg~literals(
 pdgw
+tk~^func.literals.cc=~?
 afs
 pdgd~arraysize=
 EOF
 EXPECT=<<EOF
+0
 void literals (uint8_t (*decimal)[8], uint8_t (*octal)[010], uint8_t (*hexadecimal)[0x8], uint8_t (*precedence)[1|2+3]);
                         <type name="" size="8" metatype="array" arraysize="8">
                         <type name="" size="8" metatype="array" arraysize="8">
                         <type name="" size="8" metatype="array" arraysize="8">
                         <type name="" size="5" metatype="array" arraysize="5">
 void literals(uint8_t (*decimal) [8],uint8_t (*octal) [8],uint8_t (*hexadecimal) [8],uint8_t (*precedence) [5])
+0
 void literals (uint8_t (*decimal)[8], uint8_t (*octal)[8], uint8_t (*hexadecimal)[8], uint8_t (*precedence)[5]);
                         <type name="" size="8" metatype="array" arraysize="8">
                         <type name="" size="8" metatype="array" arraysize="8">
@@ -308,8 +312,8 @@ af
 e r2ghidra.lang=x86:LE:64:default:gcc
 "td typedef uint8_t Row[010]; struct Grid {Row rows[2]; uint8_t marker;};"
 tk typedef.Row
-tk struct.Grid.marker
-"afs uint8_t read_grid(Grid *grid)"
+tk tags/struct.Grid.marker
+"afs uint8_t read_grid(struct Grid *grid)"
 afc amd64
 pdgd~type name="Grid"
 pdgd~arraysize=
@@ -319,7 +323,7 @@ afs
 pdgd~type name="Grid"
 pdg~return
 "td struct Direct {uint8_t rows[2][0x8]; uint8_t marker;};"
-"afs uint8_t read_direct(Direct *grid)"
+"afs uint8_t read_direct(struct Direct *grid)"
 afc amd64
 pdgd~type name="Direct"
 pdgd~arraysize=
@@ -328,13 +332,15 @@ EOF
 EXPECT=<<EOF
 uint8_t [010]
 uint8_t,16,0
-    <type name="Grid" id="0xc000fed0477297cf" size="17" metatype="struct" alignment="1">
+    <type name="Grid" label="struct Grid" id="0xe16773ceede34643" size="17" metatype="struct" alignment="1">
+      <type name="" size="8" metatype="array" arraysize="8">
         <type name="" size="16" metatype="array" arraysize="2">
     return grid->marker;
-uint8_t read_grid (Grid *grid);
-    <type name="Grid" id="0xc000fed0477297cf" size="17" metatype="struct" alignment="1">
+uint8_t read_grid (struct Grid *grid);
+    <type name="Grid" label="struct Grid" id="0xe16773ceede34643" size="17" metatype="struct" alignment="1">
     return grid->marker;
-    <type name="Direct" id="0xeb7b449727ce9ad9" size="17" metatype="struct" alignment="1">
+    <type name="Direct" label="struct Direct" id="0xe665eaeaad11700d" size="17" metatype="struct" alignment="1">
+      <type name="" size="8" metatype="array" arraysize="8">
         <type name="" size="16" metatype="array" arraysize="2">
         <type name="" size="16" metatype="array" arraysize="2">
           <type name="" size="8" metatype="array" arraysize="8">
@@ -407,16 +413,16 @@ CMDS=<<EOF
 af
 e r2ghidra.lang=x86:LE:64:default:gcc
 "td struct Packet {uint16_t length; uint8_t payload[];};"
-tk type.Packet.size
-tk struct.Packet.payload
-"afs uint8_t (*packet_tail(Packet *packet))[]"
+tk tags/type.Packet.size
+tk tags/struct.Packet.payload
+"afs uint8_t (*packet_tail(struct Packet *packet))[]"
 afc amd64
 pdgd~:2..14
 pdgd~arraysize=
 pdg~packet_tail(
 pdgw
 afs
-tsc Packet
+tsc struct Packet
 pdgd~:2..14
 pdgd~arraysize=
 pdgw
@@ -426,7 +432,7 @@ EXPECT=<<EOF
 16
 uint8_t [],2,0
   <typegrp>
-    <type name="Packet" id="0xeb85fb619dc098d9" size="2" metatype="struct" alignment="2">
+    <type name="Packet" label="struct Packet" id="0xe69b4d0c111f6e0d" size="2" metatype="struct" alignment="2">
       <field name="length" offset="0">
         <typeref name="uint16_t" id="0xe03cc574cf9d5ff9"/>
       </field>
@@ -439,14 +445,14 @@ uint8_t [],2,0
   </typegrp>
         <type name="" size="0" metatype="array" arraysize="0">
                   <type name="" size="0" metatype="array" arraysize="0">
-uint8_t (* packet_tail(Packet *packet)) []
-uint8_t (*packet_tail (Packet *packet))[];
+uint8_t (* packet_tail(struct Packet *packet)) []
+uint8_t (*packet_tail (struct Packet *packet))[];
 struct Packet {
   uint16_t length;
   uint8_t payload[];
 };
   <typegrp>
-    <type name="Packet" id="0xeb85fb619dc098d9" size="2" metatype="struct" alignment="2">
+    <type name="Packet" label="struct Packet" id="0xe69b4d0c111f6e0d" size="2" metatype="struct" alignment="2">
       <field name="length" offset="0">
         <typeref name="uint16_t" id="0xe03cc574cf9d5ff9"/>
       </field>
@@ -459,7 +465,7 @@ struct Packet {
   </typegrp>
         <type name="" size="0" metatype="array" arraysize="0">
                   <type name="" size="0" metatype="array" arraysize="0">
-uint8_t (*packet_tail (Packet *packet))[];
+uint8_t (*packet_tail (struct Packet *packet))[];
 EOF
 EXPECT_ERR=<<EOF
 EOF
@@ -485,8 +491,8 @@ tk~^IncompleteUnion=~?
 pdgd~field name=~?
 EOF
 EXPECT=<<EOF
-    <type name="HeaderS" id="0xc51dce619a332555" size="0" metatype="struct" alignment="1"/>
-    <type name="HeaderU" id="0xc51dce619a3322ab" size="0" metatype="union" alignment="1"/>
+    <type name="HeaderS" label="struct HeaderS" id="0xdbbbbbe5bd6e0b79" size="0" metatype="struct" alignment="1"/>
+    <type name="HeaderU" label="union HeaderU" id="0xdbbbbbe5bd6e0b7b" size="0" metatype="union" alignment="1"/>
 0
 void opaque_header(SA *s,UA *u)
 0
@@ -563,11 +569,11 @@ e r2ghidra.lang=x86:LE:64:default:gcc
 tk func.Open.prototype
 tk func.Fixed.prototype
 s 0
-"afs int call_open(Slots *slots)"
+"afs int call_open(struct Slots *slots)"
 afc amd64
 pdg~slots->
 s 0x10
-"afs int call_fixed(Slots *slots)"
+"afs int call_fixed(struct Slots *slots)"
 afc amd64
 pdg~slots->
 tk func.Open.prototype=unknown
@@ -638,7 +644,7 @@ CMDS=<<EOF
 af
 e r2ghidra.lang=x86:LE:64:default:gcc
 "td struct Big {uint64_t words[3];};"
-"afs Big large(void)"
+"afs struct Big large(void)"
 afc amd64
 tk func.large.prototype
 pdgd~hiddenretparm="true"~?
@@ -704,7 +710,7 @@ CMDS=<<EOF
 af
 e r2ghidra.lang=x86:LE:64:default:gcc
 "td struct Big {uint64_t words[3];};"
-"afs Big large(void)"
+"afs struct Big large(void)"
 afc amd64
 tk func.large.prototype=unknown
 tk func.large.prototype
@@ -726,7 +732,7 @@ unknown
 1
 0
 1
-Big * large(Big *rethidden,int64_t arg2)
+struct Big * large(struct Big *rethidden,int64_t arg2)
     rethidden->words[0] = arg2;
     rethidden->words[1] = 2;
     rethidden->words[2] = 3;
@@ -734,7 +740,7 @@ unspecified
 1
 0
 1
-Big * large(Big *rethidden,int64_t arg2,...)
+struct Big * large(struct Big *rethidden,int64_t arg2,...)
     rethidden->words[0] = arg2;
     rethidden->words[1] = 2;
     rethidden->words[2] = 3;
@@ -783,6 +789,327 @@ int callback_owner(uint32_t (*callback)())
 unspecified
 1
 uint32_t,arg1
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=ordinary alias and recursive same-spelling tag retain separate native identities and writeback
+FILE=hex://c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"td typedef int Alias; struct Alias {uint16_t value; struct Alias *next;};"
+"afs void collision(Alias ordinary, const struct Alias *tagged)"
+afc amd64
+tk Alias
+tk tags/Alias
+pdgd~def name="Alias"~?
+pdgd~label="struct Alias"~?
+pdg~collision(
+pdgw
+afs
+tk func.collision.arg.0
+tk func.collision.arg.1
+tk tags/struct.Alias.next
+tk func.collision.arg.1=union Alias *,tagged
+pdgj
+pdgw
+tk func.collision.arg.1
+EOF
+EXPECT=<<EOF
+typedef
+struct
+1
+1
+void collision(Alias ordinary,const struct Alias *tagged)
+void collision (Alias ordinary, const struct Alias *tagged);
+Alias,ordinary
+const struct Alias *,tagged
+struct Alias *,8,0
+{"errors":["Ghidra Decompiler Error: Conflicting aggregate tag for Alias"]}
+union Alias *,tagged
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=volatile pointee effects survive the native action path while ordinary and volatile pointer controls optimize
+FILE=hex://0fb7070fb707c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"afs uint16_t read_twice(volatile uint16_t *port)"
+afc amd64
+pdgd~qualified_type qualifiers="0x100000"~?
+pdgx~<op code="9"~?
+pdgx~<op code="2"~?
+pdgw
+afs
+tk func.read_twice.arg.0
+"afs uint16_t read_twice(uint16_t *port)"
+afc amd64
+pdgx~<op code="9"~?
+pdgx~<op code="2"~?
+"afs uint16_t read_twice(uint16_t * volatile port)"
+afc amd64
+pdgx~<op code="9"~?
+pdgx~<op code="2"~?
+pdgw
+afs
+EOF
+EXPECT=<<EOF
+1
+2
+0
+uint16_t read_twice (volatile uint16_t *port);
+volatile uint16_t *,port
+0
+1
+0
+1
+uint16_t read_twice (uint16_t * volatile port);
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=typedef intrinsic and added qualifier layers survive native C XML and harvest
+FILE=hex://c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"td typedef volatile uint16_t Port; typedef uint16_t *WordPtr;"
+"afs void layers(const Port *port, WordPtr const pointer, uint16_t * const *nested)"
+afc amd64
+pdg~layers(
+pdgd~qualified_type qualifiers="0x100000"~?
+pdgd~qualified_type qualifiers="0x80000"~?
+pdgw
+afs
+tk typedef.Port
+tk func.layers.arg.0
+tk func.layers.arg.1
+tk func.layers.arg.2
+EOF
+EXPECT=<<EOF
+void layers(const Port *port,const WordPtr pointer,uint16_t *const *nested)
+1
+3
+void layers (const Port *port, const WordPtr pointer, uint16_t * const *nested);
+volatile uint16_t
+const Port *,port
+const WordPtr,pointer
+uint16_t * const *,nested
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=callback record retains explicit far model frame actual call argument and reverse binding
+FILE=hex://558bec6a07ff5e0483c4025dc3
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+af+ 0 callback_owner
+afb+ 0 0 13
+e r2ghidra.lang=x86:LE:16:Protected Mode
+"afs uint16_t callback_owner(uint32_t callback)"
+tcc ax __cdecl16near(stack)
+afc __cdecl16near
+tk CB=func
+tk func.CB.ret=uint16_t
+tk func.CB.prototype=fixed
+tk func.CB.args=1
+tk func.CB.arg.0=uint16_t,value
+tk func.CB.cc=__cdecl16far
+tk func.callback_owner.arg.0=func.CB far *,callback
+pdgd~type name="func.CB"~?
+pdgd~prototype model="__cdecl16far"~?
+pdgd~addr space="stack" offset="0x4"~?
+pdg~__cdecl16far~?
+pdgx~<op code="8"~?
+pdgx~prototype model="__cdecl16far"~?
+pdg~callback))(7);
+pdg~Load size is inaccurate~?
+pdgw
+tk func.callback_owner.arg.0
+tk func.CB.cc
+pdg~callback))(7);
+pdgd~prototype model="__cdecl16far"~?
+tk func.CB.cc=cdecl
+pdgj
+pdgw
+tk func.callback_owner.arg.0
+tk func.CB.cc
+EOF
+EXPECT=<<EOF
+1
+2
+2
+1
+1
+1
+    uVar1 = (*segmentop(*(segmentop(unaff_SS,&callback) + 2),callback))(7);
+0
+func.CB far *,callback
+__cdecl16far
+    uVar1 = (*segmentop(*(segmentop(unaff_SS,&callback) + 2),callback))(7);
+2
+{"errors":["Ghidra Decompiler Error: Unsupported explicit calling convention cdecl"]}
+func.CB far *,callback
+cdecl
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=unsupported qualifier facts refuse native decompilation without writeback erasure
+FILE=hex://0fb707c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"afs uint16_t unsupported(uint16_t *port)"
+afc amd64
+tk func.unsupported.arg.0=uint16_t * restrict,port
+pdgj
+pdgw
+tk func.unsupported.arg.0
+tk func.unsupported.arg.0=_Atomic uint16_t *,port
+pdgj
+pdgw
+tk func.unsupported.arg.0
+EOF
+EXPECT=<<EOF
+{"errors":["Ghidra Decompiler Error: Unsupported restrict or atomic qualification in native type import"]}
+uint16_t * restrict,port
+{"errors":["Ghidra Decompiler Error: Unsupported restrict or atomic qualification in native type import"]}
+_Atomic uint16_t *,port
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=empty tag preserves pointee identity but explicitly refuses unsupported object layout
+FILE=hex://c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+"td struct Empty {};"
+"afs void empty_owner(struct Empty *value)"
+afc amd64
+pdgd~label="struct Empty"~?
+pdg~empty_owner(
+tk func.empty_owner.arg.0=struct Empty,value
+pdgj
+pdgw
+tk func.empty_owner.arg.0
+EOF
+EXPECT=<<EOF
+1
+void empty_owner(struct Empty *value)
+{"errors":["Ghidra Decompiler Error: Failed to construct complete struct Empty"]}
+struct Empty,value
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=operational far convention overrides a supplied near record for concrete import
+FILE=hex://c3
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+af+ 0 precedence
+afb+ 0 0 1
+e r2ghidra.lang=x86:LE:16:Protected Mode
+tcc ax __cdecl16near(stack)
+tcc ax __cdecl16far(stack)
+"afs void precedence(uint16_t value)"
+tk func.precedence.cc=__cdecl16near
+afc __cdecl16far
+tk func.precedence.cc
+afc
+pdgd~prototype model="__cdecl16far"~extrapop="4"~?
+pdgd~addr space="stack" offset="0x4"~?
+pdgd~prototype model="__cdecl16near"~?
+pdg~precedence(
+EOF
+EXPECT=<<EOF
+__cdecl16near
+__cdecl16far
+1
+1
+0
+void __cdecl16far precedence(uint16_t value)
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=changed signature harvest preserves operational near convention and independent far callback record
+FILE=hex://558bec6a07ff5e0483c4025dc3
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+af+ 0 changed_owner
+afb+ 0 0 13
+e r2ghidra.lang=x86:LE:16:Protected Mode
+tcc ax __cdecl16near(stack)
+tcc ax __cdecl16far(stack)
+"afs uint16_t changed_owner(uint32_t callback, uint16_t (*values)[010])"
+tk Independent=func
+tk func.Independent.ret=uint16_t
+tk func.Independent.prototype=fixed
+tk func.Independent.args=1
+tk func.Independent.arg.0=uint16_t,value
+tk func.Independent.cc=__cdecl16far
+tk func.changed_owner.arg.0=func.Independent far *,callback
+tk func.changed_owner.cc=__cdecl16far
+afc __cdecl16near
+tk func.changed_owner.arg.1
+tk func.changed_owner.cc
+afc
+tk func.Independent.cc
+pdgd~prototype model="__cdecl16near"~extrapop="2"~?
+pdgd~addr space="stack" offset="0x2"~?
+pdgd~addr space="stack" offset="0x6"~?
+pdgd~prototype model="__cdecl16far"~extrapop="4"~?
+pdg~callback))(7);
+pdgw
+tk func.changed_owner.arg.1
+tk func.changed_owner.arg.0
+tk func.changed_owner.cc
+afc
+tk func.Independent.cc
+pdgd~prototype model="__cdecl16near"~extrapop="2"~?
+pdgd~addr space="stack" offset="0x2"~?
+pdgd~addr space="stack" offset="0x6"~?
+pdgd~prototype model="__cdecl16far"~extrapop="4"~?
+pdg~callback))(7);
+EOF
+EXPECT=<<EOF
+uint16_t (*)[010],values
+__cdecl16far
+__cdecl16near
+__cdecl16far
+1
+1
+1
+2
+    uVar1 = (*segmentop(*(segmentop(unaff_SS,&callback) + 2),callback))(7);
+uint16_t (near *)[8],values
+func.Independent far *,callback
+__cdecl16far
+__cdecl16near
+__cdecl16far
+1
+1
+1
+2
+    uVar1 = (*segmentop(*(segmentop(unaff_SS,&callback) + 2),callback))(7);
 EOF
 EXPECT_ERR=<<EOF
 EOF

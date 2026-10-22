@@ -91,11 +91,7 @@ static void addRangesWithPointers(RCoreLock &core, RangeList &list, AddrSpace *s
 
 // the loader fills relocation targets in at runtime, so their on-disk bytes are not constants
 static void removeRelocRanges(RCoreLock &core, RangeList &list, AddrSpace *space) {
-#if R2_ABIVERSION >= 136
 	RVecRBinReloc *relocs = r_bin_get_relocs (core->bin);
-#else
-	RRBTree *relocs = r_bin_get_relocs (core->bin);
-#endif
 	if (!relocs) {
 		return;
 	}
@@ -107,16 +103,9 @@ static void removeRelocRanges(RCoreLock &core, RangeList &list, AddrSpace *space
 		}
 	};
 	RBinReloc *reloc;
-#if R2_ABIVERSION >= 136
 	R_VEC_FOREACH (relocs, reloc) {
 		removeRelocRange (reloc);
 	}
-#else
-	RRBNode *node;
-	r_crbtree_foreach (relocs, node, RBinReloc, reloc) {
-		removeRelocRange (reloc);
-	}
-#endif
 }
 
 void R2LoadImage::getReadonly(RangeList &list) const {

@@ -43,6 +43,10 @@ private:
 	Datatype *queryR2(const string &n, TypeResolution &resolution, bool behindPointer = false);
 	Datatype *fromCStringResolved(const string &str, string *error, TypeResolution &resolution, bool behindPointer = false);
 	Datatype *fromDeclaration(const RTypeDeclNode *node, string *error, TypeResolution &resolution, bool behindPointer, int depth = 0);
+	Datatype *fromUnqualifiedDeclaration(const RTypeDeclNode *node, string *error, TypeResolution &resolution, bool behindPointer, int depth);
+	static string nativeName(const string &name);
+	static uint8 nativeId(const string &name);
+	static string declarationName(const Datatype *type);
 	RTypeDecl *toDeclaration(Datatype *type, int depth) const;
 	Datatype *findByIdResolved(const string &n, uint8 id, int4 sz, TypeResolution &resolution, Datatype *r, bool resolvedBase, bool behindPointer = false);
 	Datatype *findByName(const string &n, TypeResolution &resolution, bool behindPointer = false) { return findByIdResolved(n, 0, 0, resolution, nullptr, false, behindPointer); }
@@ -60,6 +64,7 @@ public:
 
 	Datatype *fromCString(const string &str, string *error = nullptr, std::set<std::string> *stackTypes = nullptr);
 	std::string toCString(Datatype *type) const;
+	bool isFunctionRecord(const Datatype *type) const;
 	bool hasSegmentedPointers() const;
 	RTypePointerKind pointerKind(const TypePointer *type) const;
 };

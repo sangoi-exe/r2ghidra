@@ -85,7 +85,7 @@ static void FillHarvestVar(R2Architecture &arch, const std::string &name, bool n
 static bool PrototypeStorageMatches(R2Architecture &arch, const FuncProto &proto, std::vector<bool> &paramsMatch) {
 	PrototypePieces pieces;
 	proto.getPieces (pieces);
-	if (!pieces.model) {
+	if (!pieces.model || pieces.model->isUnknown ()) {
 		return false;
 	}
 	auto roundTrip = [&](Datatype *type) {
@@ -186,16 +186,13 @@ static bool DeclarationKnown(RAnal *anal, const RTypeDeclNode *node) {
 	if (!node) {
 		return false;
 	}
-	if (node->kind == R_TYPE_DECL_LVALUE_REFERENCE || node->kind == R_TYPE_DECL_RVALUE_REFERENCE) {
+	if ((node->qualifiers & ~(R_TYPE_DECL_CONST | R_TYPE_DECL_VOLATILE)) || node->kind == R_TYPE_DECL_LVALUE_REFERENCE || node->kind == R_TYPE_DECL_RVALUE_REFERENCE) {
 		return false;
 	}
 	if (node->kind == R_TYPE_DECL_BASE) {
 		const char *name = node->base.name;
-		for (const char *prefix : { "struct ", "union ", "enum ", "func." }) {
-			if (r_str_startswith (name, prefix)) {
-				name += strlen (prefix);
-				break;
-			}
+		if (r_str_startswith (name, "func.")) {
+			return r_type_func_prototype_exist (anal->sdb_types, name + 5);
 		}
 		return !strcmp (name, "void") || r_type_kind (anal->sdb_types, name) != R_TYPE_INVALID;
 	}
@@ -259,7 +256,9 @@ static void WriteVar(RCore *core, RAnalFunction *fcn, const HarvestVar &hv, cons
 		return;
 	}
 	if (!hv.type.empty () && (!var->type || hv.type != var->type)) {
-		if (TypeParseable (core->anal, hv.type)) {
+		if (var->type && *var->type && !TypeParseable (core->anal, var->type)) {
+			R_LOG_DEBUG ("pdgw: preserving unsupported source type %s", var->type);
+		} else if (TypeParseable (core->anal, hv.type)) {
 			r_anal_var_set_type (core->anal, var, hv.type.c_str ());
 			(*types)++;
 		} else {
@@ -294,6 +293,17 @@ static bool WriteSignature(RCore *core, RAnalFunction *fcn, const Harvest &h) {
 		return false;
 	}
 	const char *curRet = R_STR_ISNOTEMPTY (cur->ret_type) ? cur->ret_type : NULL;
+	if (curRet && !TypeParseable (core->anal, curRet, true)) {
+		r_anal_function_signature_free (cur);
+		return false;
+	}
+	for (RListIter *it = cur->params->head; it; it = it->n) {
+		auto parameter = static_cast<const RAnalFunctionParam *>(it->data);
+		if (!r_type_arg_is_vararg (parameter->type, parameter->name) && (!parameter->type || !TypeParseable (core->anal, parameter->type))) {
+			r_anal_function_signature_free (cur);
+			return false;
+		}
+	}
 	std::string ret = h.proto.retType;
 	if (ret.empty () || !TypeParseable (core->anal, ret, true)) {
 		ret = curRet ? curRet : "void";
@@ -304,7 +314,9 @@ static bool WriteSignature(RCore *core, RAnalFunction *fcn, const Harvest &h) {
 	RAnalFunctionSignature sig = {};
 	sig.prototype = cur->prototype;
 	sig.ret_type = (char *)ret.c_str ();
-	sig.callconv = (char *)fcn->callconv;
+	const char *recordCallconv = cur->type_name ? sdb_const_getf (core->anal->sdb_types, nullptr, "func.%s.cc", cur->type_name) : nullptr;
+	const std::string sourceCallconv = recordCallconv ? recordCallconv : "";
+	sig.callconv = sourceCallconv.empty () ? nullptr : const_cast<char *>(sourceCallconv.c_str ());
 	sig.noreturn = h.proto.noreturn || fcn->is_noreturn;
 	sig.params = r_list_newf (param_free);
 	bool complete = true;
@@ -352,10 +364,18 @@ static bool WriteSignature(RCore *core, RAnalFunction *fcn, const Harvest &h) {
 	}
 	bool applied = false;
 	if (complete && changed) {
-		applied = r_anal_function_set_signature (core->anal, fcn, &sig);
-		if (!applied) {
-			R_LOG_DEBUG ("pdgw: signature rejected by the type parser");
+		char *error = nullptr;
+		RAnalFunctionSignaturePrepared *prepared = r_anal_function_signature_prepare_structured (core->anal, fcn, &sig, true, &error);
+		if (prepared) {
+			applied = r_anal_function_signature_apply (core->anal, fcn, prepared);
+			if (!applied) {
+				R_LOG_DEBUG ("pdgw: cannot apply prepared recovered signature");
+			}
+		} else {
+			R_LOG_DEBUG ("pdgw: cannot prepare recovered signature: %s", error ? error : "structured admission failed");
 		}
+		r_anal_function_signature_prepared_free (prepared);
+		free (error);
 	} else if (!complete) {
 		R_LOG_DEBUG ("pdgw: incomplete parameter types, not writing the signature");
 	}

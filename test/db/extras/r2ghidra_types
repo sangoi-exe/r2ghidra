@@ -7,7 +7,7 @@ e r2ghidra.lang=x86:LE:64:default:gcc
 af
 afn callback_owner
 "td struct Large { uint64_t a; uint64_t b; uint64_t c; };"
-"afs void callback_owner(Large (*callback)(int value))"
+"afs void callback_owner(struct Large (*callback)(int value))"
 afc amd64
 afs
 pdgd~hiddenretparm="true"~?
@@ -21,13 +21,13 @@ afv
 afs
 EOF
 EXPECT=<<EOF
-void callback_owner (Large (*callback)(int value));
+void callback_owner (struct Large (*callback)(int value));
 1
-arg Large (*)(int value) callback @ rdi
-void callback_owner (Large (*callback)(int value));
+arg struct Large (*)(int value) callback @ rdi
+void callback_owner (struct Large (*callback)(int value));
 1
-arg Large (*)(int value) callback @ rdi
-void callback_owner (Large (*callback)(int value));
+arg struct Large (*)(int value) callback @ rdi
+void callback_owner (struct Large (*callback)(int value));
 EOF
 EXPECT_ERR=<<EOF
 INFO: pdgw: wrote 1 types, 1 names
@@ -227,21 +227,23 @@ af+ 0 extended
 afb+ 0 0 1
 e r2ghidra.lang=x86:LE:16:Protected Mode
 "td struct ExtendedArray { long double values[2]; };"
-tss ExtendedArray
-"afs void extended(ExtendedArray *array)"
+tss struct ExtendedArray
+"afs void extended(struct ExtendedArray *array)"
 tcc ax __cdecl16far(stack)
 afc __cdecl16far
-pdgd~type name="long double"~size="10"~?
+pdgd~:3..6
 pdgd~type name="ExtendedArray"~size="20"~?
 pdgd~metatype="array"~size="20"~arraysize="2"~?
 pdg~extended(
 EOF
 EXPECT=<<EOF
 20
+    <def name="long double" id="0xcc2761e4a565dbf5">
+      <typeref name="float10" id="0xee3339c49fe02f85"/>
+    </def>
 1
 1
-1
-void __cdecl16far extended(ExtendedArray near *array)
+void __cdecl16far extended(struct ExtendedArray near *array)
 EOF
 EXPECT_ERR=<<EOF
 EOF
@@ -293,13 +295,13 @@ e r2ghidra.lang=x86:LE:32:default:windows
 afc fastcall @ 0x1040
 pdgd~prototype model="__fastcall"
 afc golang @ 0x1040
-pdgd~prototype model="unknown"
+pdgj
 afc cdecl @ 0x1040
 pdgd~prototype model="__cdecl"
 EOF
 EXPECT=<<EOF
             <prototype model="__fastcall" extrapop="unknown">
-            <prototype model="unknown" extrapop="unknown">
+{"errors":["Ghidra Decompiler Error: Unsupported explicit calling convention golang"]}
             <prototype model="__cdecl" extrapop="4">
 EOF
 RUN
@@ -315,9 +317,9 @@ afc cdecl
 e r2ghidra.lang=x86:LE:32:default:gcc
 "td typedef unsigned short WORD;"
 "td struct FarAddress16 { WORD offset; WORD selector; };"
-tk struct.FarAddress16.selector=WORD,2,0
+tk tags/struct.FarAddress16.selector=WORD,2,0
 "td int original_name(int wrong);"
-"td void linked_move(FarAddress16 source, FarAddress16 destination, WORD byte_count);"
+"td void linked_move(struct FarAddress16 source, struct FarAddress16 destination, WORD byte_count);"
 tl linked_move = 0x1000
 afs
 pdgd~prototype model=
@@ -330,18 +332,18 @@ pdgd~addr space="stack"
 pdg~renamed_move(
 EOF
 EXPECT=<<EOF
-void original_name (FarAddress16 source, FarAddress16 destination, WORD byte_count);
+void original_name (struct FarAddress16 source, struct FarAddress16 destination, WORD byte_count);
             <prototype model="__cdecl" extrapop="4" modellock="true">
                     <addr space="stack" offset="0xc"/>
                     <addr space="stack" offset="0x8"/>
                     <addr space="stack" offset="0x4"/>
-void original_name(FarAddress16 source,FarAddress16 destination,WORD byte_count)
-void renamed_move (FarAddress16 source, FarAddress16 destination, WORD byte_count);
+void original_name(struct FarAddress16 source,struct FarAddress16 destination,WORD byte_count)
+void renamed_move (struct FarAddress16 source, struct FarAddress16 destination, WORD byte_count);
             <prototype model="__cdecl" extrapop="4" modellock="true">
                     <addr space="stack" offset="0xc"/>
                     <addr space="stack" offset="0x8"/>
                     <addr space="stack" offset="0x4"/>
-void renamed_move(FarAddress16 source,FarAddress16 destination,WORD byte_count)
+void renamed_move(struct FarAddress16 source,struct FarAddress16 destination,WORD byte_count)
 EOF
 RUN
 
@@ -1869,11 +1871,11 @@ NAME=aeropause32 (many features combined)
 FILE=bins/dectest32
 EXPECT=<<EOF
 
-void sym.Aeropause(Bright *bright,int32_t argc,char **argv)
+void sym.Aeropause(struct Bright *bright,int32_t argc,char **argv)
 
 {
-    Ambassador AVar1;
-    Morning *pMVar2;
+    enum Ambassador AVar1;
+    struct Morning *pMVar2;
     int iVar3;
     
     pMVar2 = sym.imp.malloc(8);
@@ -1937,7 +1939,7 @@ CMDS=<<EOF
 aaa
 to bins/types.h
 s sym.Aeropause
-afvb 8 bright Bright *
+afvb 8 bright struct Bright *
 afvb 12 argc int32_t
 afvb 16 argv const char **
 pdg
@@ -1948,12 +1950,12 @@ NAME=aeropause64 (many features combined)
 FILE=bins/dectest64
 EXPECT=<<EOF
 
-void sym.Aeropause(Bright *bright,int32_t argc,char **argv)
+void sym.Aeropause(struct Bright *bright,int32_t argc,char **argv)
 
 {
     uint uVar1;
     int iVar2;
-    Morning *pMVar3;
+    struct Morning *pMVar3;
     int64_t var_18h;
     int32_t var_ch;
     char *s1;
@@ -2028,11 +2030,11 @@ NAME=typedef
 FILE=bins/dectest32
 EXPECT=<<EOF
 
-void sym.Aeropause(Bright *bright,int32_t argc,char **argv)
+void sym.Aeropause(struct Bright *bright,int32_t argc,char **argv)
 
 {
-    Ambassador AVar1;
-    Morning *pMVar2;
+    enum Ambassador AVar1;
+    struct Morning *pMVar2;
     int iVar3;
     
     pMVar2 = sym.imp.malloc(8);
@@ -2093,11 +2095,11 @@ void sym.Aeropause(Bright *bright,int32_t argc,char **argv)
 
 --
 
-void sym.Aeropause(Bright *bright,int32_t argc,char **argv)
+void sym.Aeropause(struct Bright *bright,int32_t argc,char **argv)
 
 {
-    Ambassador AVar1;
-    Morning *pMVar2;
+    enum Ambassador AVar1;
+    struct Morning *pMVar2;
     int iVar3;
     
     pMVar2 = sym.imp.malloc(8);
@@ -2157,16 +2159,20 @@ void sym.Aeropause(Bright *bright,int32_t argc,char **argv)
 }
 
 --
-{"errors":["Ghidra Decompiler Error: Failed to match type BrightTypedefdPtr for variable bright: Unable to resolve type 'BrightTypedefdPtr'"]}
-{"errors":["Ghidra Decompiler Error: Failed to match type struct BrightTypedefd * for variable bright: Conflicting aggregate tag for BrightTypedefd"]}
-void sym.Aeropause(Bright *bright,int32_t argc,char **argv)
+typedef
+struct Bright
+struct
+1
+1
+1
+void sym.Aeropause(struct Bright *bright,int32_t argc,char **argv)
 EOF
 CMDS=<<EOF
 aaa
 to bins/types.h
 s sym.Aeropause
 afvb 8 bright BrightPtr
-afvb 12 argc Bright *
+afvb 12 argc struct Bright *
 afvb 16 argv const char **
 pdg
 ?e --
@@ -2175,12 +2181,16 @@ afvb 12 argc int32_t
 afvb 16 argv const char **
 pdg
 ?e --
+tk BrightTypedefd
+tk typedef.BrightTypedefd
+tk tags/BrightTypedefd
 afvb 8 bright BrightTypedefdPtr
-pdgj
+pdgd~type name="BrightTypedefd"~label="struct BrightTypedefd"~size="0"~?
 afvb 8 bright struct BrightTypedefd *
-pdgj
+pdgd~type name="BrightTypedefd"~label="struct BrightTypedefd"~size="0"~?
 tk typedef.BrightTypedefdPtr=BrightTypedefd *
 afvb 8 bright BrightTypedefdPtr
+pdgd~def name="BrightTypedefd"~?
 pdg~sym.Aeropause(
 EOF
 RUN
@@ -2626,7 +2636,7 @@ CMDS=<<EOF
 s sym.sum2
 af
 'td struct V2 { float x; float y; };
-'afs float sum2(V2 v)
+'afs float sum2(struct V2 v)
 pdg~v.x
 EOF
 EXPECT=<<EOF
@@ -2653,7 +2663,7 @@ CMDS=<<EOF
 to bins/function-pointer-field-arm64.h
 s sym.call_short_slot
 af
-'afs float call_short_slot(ShortSlot* slot, Receiver* receiver)
+'afs float call_short_slot(struct ShortSlot* slot, struct Receiver* receiver)
 pdg~methodPtr
 EOF
 EXPECT=<<EOF
@@ -2667,7 +2677,7 @@ CMDS=<<EOF
 to bins/function-pointer-field-arm64.h
 s sym.call_long_slot
 af
-'afs float call_long_slot(VeryLongConcreteGenericOwnerName_VTableSlot* slot, Receiver* receiver)
+'afs float call_long_slot(struct VeryLongConcreteGenericOwnerName_VTableSlot* slot, struct Receiver* receiver)
 pdg~methodPtr
 EOF
 EXPECT=<<EOF
@@ -2681,7 +2691,7 @@ CMDS=<<EOF
 to bins/function-pointer-union-arm64.h
 s sym.call_short_slot
 af
-'afs float call_short_slot(UnionSlot* slot, Receiver* receiver)
+'afs float call_short_slot(struct UnionSlot* slot, struct Receiver* receiver)
 pdg~cb
 EOF
 EXPECT=<<EOF
@@ -2882,17 +2892,17 @@ af
 afc amd64
 e r2ghidra.lang=x86:LE:64:default:gcc
 "td struct Pair { int x; int y; };"
-"afs int read_pair(Pair *pair)"
+"afs int read_pair(struct Pair *pair)"
 pdgw
 afs
 pdgw
 afs
 pdg~return
-tk struct.Pair.y
+tk tags/struct.Pair.y
 EOF
 EXPECT=<<EOF
-int read_pair (Pair *pair);
-int read_pair (Pair *pair);
+int read_pair (struct Pair *pair);
+int read_pair (struct Pair *pair);
     return pair->y;
 int,4,0
 EOF
@@ -3213,7 +3223,7 @@ afn caller
 afc amd64
 e r2ghidra.lang=x86:LE:64:default:gcc
 "td struct Prefix { uint8_t bytes[8]; };"
-afvt var_10h Prefix
+afvt var_10h struct Prefix
 afvt var_14h uint8_t[4]
 pdgw
 afv~var_14h
@@ -3285,8 +3295,8 @@ afb+ 0 0 1
 e r2ghidra.lang=x86:LE:16:Protected Mode
 "td typedef unsigned short WORD;"
 "td struct FarAddress16 { WORD offset; WORD selector; };"
-tk struct.FarAddress16.selector=WORD,2,0
-"afs void far_records(FarAddress16 source, FarAddress16 destination, WORD byte_count)"
+tk tags/struct.FarAddress16.selector=WORD,2,0
+"afs void far_records(struct FarAddress16 source, struct FarAddress16 destination, WORD byte_count)"
 tcc ax __cdecl16far(stack)
 afc __cdecl16far
 pdgd~prototype model=
@@ -3295,7 +3305,8 @@ tcc ax borland_fmovmem_16far(stack)
 afc borland_fmovmem_16far
 pdgd~prototype model=
 pdgd~type name="FarAddress16"~size="4"~?
-pdgd~type name="WORD"~size="2"~metatype="uint"~?
+pdgd~:3..9
+tss WORD
 pdgd~field name=
 pdgd~addr space="stack"
 pdgd~void/
@@ -3308,14 +3319,20 @@ EXPECT=<<EOF
                     <addr space="stack" offset="0x4"/>
             <prototype model="borland_fmovmem_16far" extrapop="4" modellock="true">
 1
-1
+    <def name="unsigned short" id="0xe4345293f631d9e1">
+      <typeref name="uint16_t" id="0xe03cc574cf9d5ff9"/>
+    </def>
+    <def name="WORD" id="0xc0000085021a07ef">
+      <typeref name="unsigned short" id="0xe4345293f631d9e1"/>
+    </def>
+2
       <field name="offset" offset="0">
       <field name="selector" offset="2">
                     <addr space="stack" offset="0xc"/>
                     <addr space="stack" offset="0x8"/>
                     <addr space="stack" offset="0x4"/>
                 <void/>
-void borland_fmovmem_16far far_records(FarAddress16 source,FarAddress16 destination,WORD byte_count)
+void borland_fmovmem_16far far_records(struct FarAddress16 source,struct FarAddress16 destination,WORD byte_count)
 EOF
 RUN
 
@@ -3432,7 +3449,7 @@ e r2ghidra.lang=x86:LE:64:default:gcc
 "td struct OrdinaryRecord { uint32_t head; uint8_t tail; };"
 tk OrdinaryArrays=struct
 tk struct.OrdinaryArrays=records
-tk struct.OrdinaryArrays.records=OrdinaryRecord,0,2
+tk struct.OrdinaryArrays.records=struct OrdinaryRecord,0,2
 "afs void ordinary_arrays(OrdinaryArrays *records)"
 pdgd~type name="OrdinaryRecord"~size="8"~alignment="4"~?
 pdgd~type name="OrdinaryArrays"~size="16"~alignment="4"~?
@@ -3519,7 +3536,7 @@ EXPECT=<<EOF
 0
 {"errors":["Ghidra Decompiler Error: Failed to construct complete union U"]}
 1
-uint16_t read_union(U *p,U *q)
+uint16_t read_union(U *p,const U *q)
     return q[1].x;
 {"errors":["Ghidra Decompiler Error: Failed to construct complete union U"]}
 {"errors":["Ghidra Decompiler Error: Failed to construct complete union U"]}
@@ -3744,16 +3761,18 @@ tk BP=typedef
 tk typedef.BP=B *
 "afs uint64_t read_a(A *p)"
 afc amd64
-pdgd~:2..20
+pdgd~:2..22
 pdg~return
 "afs uint64_t read_b(B *p)"
 afc amd64
-pdgd~:2..20
+pdgd~:2..22
 EOF
 EXPECT=<<EOF
   <typegrp>
     <def name="BP" id="0xc00000fe552e17fb">
-      <typeref name="" id="0xc00000000000007b"/>
+      <type name="" size="8" metatype="ptr">
+        <typeref name="B" id="0xc0000000feab85e9"/>
+      </type>
     </def>
     <type name="A" id="0xc000000000007b41" size="8" metatype="union" alignment="8">
       <field name="p" offset="0">
@@ -3772,7 +3791,9 @@ EXPECT=<<EOF
     return p->p->value;
   <typegrp>
     <def name="BP" id="0xc00000fe552e17fb">
-      <typeref name="" id="0xc00000000000007b"/>
+      <type name="" size="8" metatype="ptr">
+        <typeref name="B" id="0xc0000000feab85e9"/>
+      </type>
     </def>
     <type name="A" id="0xc000000000007b41" size="8" metatype="union" alignment="8">
       <field name="p" offset="0">

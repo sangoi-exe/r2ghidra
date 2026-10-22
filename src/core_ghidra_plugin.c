@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2019-2026 thestr4ng3r, pancake
 // SPDX-License-Identifier: LGPL-3.0-only
 
-#include <r_core.h>
+#include "r2ghidra.h"
 #include "../config.h"
 
 extern bool r2ghidra_core_fini(RCorePluginSession *cps);
