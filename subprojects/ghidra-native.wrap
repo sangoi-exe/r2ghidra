@@ -1,5 +1,5 @@
 [wrap-git]
 url = https://github.com/sangoi-exe/ghidra-native.git
-revision = f1d3c8c743e061b666c54109114ed20b879c0a87
+revision = d9a1e93341bfe12f06a2f7af39619384589b57ad
 directory = ghidra-native
 depth = 1

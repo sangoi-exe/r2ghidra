@@ -876,6 +876,128 @@ EXPECT_ERR=<<EOF
 EOF
 RUN
 
+NAME=Win16 near volatile pointee reads survive entry-frame import
+FILE=malloc://64
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+wx 558bec8b5e048b078b075dc3
+af+ 0 read_twice
+afb+ 0 0 12
+e r2ghidra.lang=x86:LE:16:Protected Mode
+tcc ax __cdecl16near(stack)
+"afs uint16_t read_twice(volatile uint16_t near *port)"
+afc __cdecl16near
+pdgd~prototype model="__cdecl16near"~modellock="true"~?
+pdgd~symbol name="port"~typelock="true"~?
+pdgd~addr space="stack" offset="0x2"~?
+pdgd~type name="" size="2" metatype="ptr"~?
+pdgx~<op code="9"~?
+pdgx~<op code="2"~?
+pdgj~{pcode_ops[1].offset}
+pdgj~{pcode_ops[1].opcode}
+pdgj~{pcode_ops[1].is_dead}
+pdgj~{pcode_ops[3].offset}
+pdgj~{pcode_ops[3].opcode}
+pdgj~{pcode_ops[3].is_dead}
+EOF
+EXPECT=<<EOF
+1
+1
+1
+1
+2
+0
+6
+9
+false
+8
+9
+false
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=Win16 far volatile pointee reads survive entry-frame import
+FILE=malloc://64
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+wx 558bec06c45e04268b07268b07075dc3
+af+ 0 read_twice
+afb+ 0 0 16
+e r2ghidra.lang=x86:LE:16:Protected Mode
+tcc ax __cdecl16near(stack)
+"afs uint16_t read_twice(volatile uint16_t far *port)"
+afc __cdecl16near
+pdgd~prototype model="__cdecl16near"~modellock="true"~?
+pdgd~symbol name="port"~typelock="true"~?
+pdgd~addr space="stack" offset="0x2"~?
+pdgd~type name="" size="4" metatype="ptr"~?
+pdgx~<op code="9"~?
+pdgx~<op code="2"~?
+pdgj~{pcode_ops[0].offset}
+pdgj~{pcode_ops[0].opcode}
+pdgj~{pcode_ops[0].is_dead}
+pdgj~{pcode_ops[1].offset}
+pdgj~{pcode_ops[1].opcode}
+pdgj~{pcode_ops[1].is_dead}
+EOF
+EXPECT=<<EOF
+1
+1
+1
+1
+2
+0
+7
+9
+false
+10
+9
+false
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=equal-sized aggregate volatile member retains both native read effects
+FILE=malloc://64
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+wx 0fb7070fb707c3
+af+ 0 read_twice
+afb+ 0 0 7
+e r2ghidra.lang=x86:LE:64:default:gcc
+"td struct Port {volatile uint16_t value;};"
+"afs uint16_t read_twice(struct Port *port)"
+afc amd64
+tk tags/struct.Port.value
+pdgd~label="struct Port"~size="2"~?
+pdgx~<op code="9"~?
+pdgx~<op code="2"~?
+pdgj~{pcode_ops[0].offset}
+pdgj~{pcode_ops[0].opcode}
+pdgj~{pcode_ops[0].is_dead}
+pdgj~{pcode_ops[1].offset}
+pdgj~{pcode_ops[1].opcode}
+pdgj~{pcode_ops[1].is_dead}
+EOF
+EXPECT=<<EOF
+volatile uint16_t,0,0
+1
+2
+0
+0
+9
+false
+3
+9
+false
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
 NAME=typedef intrinsic and added qualifier layers survive native C XML and harvest
 FILE=hex://c3
 ARGS=-a x86 -b 64 -e log.level=0
