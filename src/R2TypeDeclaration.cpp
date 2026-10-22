@@ -146,7 +146,8 @@ Datatype *R2TypeFactory::fromUnqualifiedDeclaration(const RTypeDeclNode *node, s
 	}
 	case R_TYPE_DECL_FUNCTION: {
 		PrototypePieces proto;
-		proto.model = arch->protoModelFromR2CC (nullptr);
+		proto.model = arch->protoModelFromR2CC (node->function.callconv);
+		proto.modelDeclared = node->function.callconv != nullptr;
 		if (!proto.model) {
 			failTypeConstruction ("Missing prototype model for anonymous function type");
 		}
@@ -236,11 +237,19 @@ RTypeDecl *R2TypeFactory::toDeclaration(Datatype *type, int depth) const {
 	}
 	case TYPE_CODE: {
 		const FuncProto *proto = static_cast<TypeCode *>(type)->getPrototype ();
-		const ProtoModel *defaultModel = arch->protoModelFromR2CC (nullptr);
-		if (!proto || proto->isModelUnknown () || !defaultModel || proto->getModelName () != defaultModel->getName ()) {
+		if (!proto || proto->isModelUnknown ()) {
 			return nullptr;
 		}
+		if (!proto->isModelDeclared ()) {
+			const ProtoModel *defaultModel = arch->protoModelFromR2CC (nullptr);
+			if (!defaultModel || proto->getModelName () != defaultModel->getName ()) {
+				return nullptr;
+			}
+		}
 		node->kind = R_TYPE_DECL_FUNCTION;
+		if (proto->isModelDeclared ()) {
+			node->function.callconv = strdup (proto->getModelName ().c_str ());
+		}
 		node->function.parameters = r_list_newf (reinterpret_cast<RListFree> (r_type_decl_free));
 		Datatype *returnType = proto->getOutputType ();
 		for (int4 i = 0; i < proto->numParams (); i++) {

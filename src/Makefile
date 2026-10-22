@@ -74,6 +74,7 @@ check-radare2-sdk:
 		'  RTypeDeclNode node = {};' \
 		'  node.array.count = argv[0];' \
 		'  node.function.prototype = true;' \
+		'  node.function.callconv = argv[0];' \
 		'  RTypeIntegerModel model = {16, 32, 64};' \
 		'  ut64 count = 0;' \
 		'  int parameters = argc;' \
@@ -92,7 +93,7 @@ check-radare2-sdk:
 		'  r_anal_function_signature_prepared_free(prepared);' \
 		'  return applied && types;' \
 		'}' \
-		| $(CXX) $(CXXFLAGS) $(R2_CFLAGS) -x c++ - -o /dev/null $(R2_LDFLAGS) $(LDFLAGS) || { echo "r2ghidra requires radare2 ABI 158 or newer with current semantic type APIs and operational-CC-preserving structured preparation; rebuild the matching host SDK" >&2; exit 1; }
+		| $(CXX) $(CXXFLAGS) $(R2_CFLAGS) -x c++ - -o /dev/null $(R2_LDFLAGS) $(LDFLAGS) || { echo "r2ghidra requires radare2 ABI 159 or newer with intrinsic function conventions, current semantic type APIs and operational-CC-preserving structured preparation; rebuild the matching host SDK" >&2; exit 1; }
 
 # zlib static build
 ../subprojects/zlib/libz.a: | check-radare2-sdk

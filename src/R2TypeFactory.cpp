@@ -645,7 +645,9 @@ Datatype *R2TypeFactory::queryR2Function(const string &n, TypeResolution &resolu
 	}
 
 	PrototypePieces proto;
-	proto.model = arch->protoModelFromR2CC (sdb_const_getf (sdb, nullptr, "func.%s.cc", n.c_str ()));
+	const char *callconv = sdb_const_getf (sdb, nullptr, "func.%s.cc", n.c_str ());
+	proto.model = arch->protoModelFromR2CC (callconv);
+	proto.modelDeclared = R_STR_ISNOTEMPTY (callconv);
 	if (!proto.model) {
 		failTypeConstruction ("Missing prototype model for function type " + n);
 	}

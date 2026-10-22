@@ -83,6 +83,7 @@ int main(int argc, char **argv) {
   RTypeDeclNode node = {};
   node.array.count = argv[0];
   node.function.prototype = true;
+  node.function.callconv = argv[0];
   RTypeIntegerModel model = {16, 32, 64};
   ut64 count = 0;
   int parameters = argc;
@@ -101,8 +102,8 @@ int main(int argc, char **argv) {
   r_anal_function_signature_prepared_free(prepared);
   return applied && types;
 }
-''', dependencies: r_core, include_directories: r2ghidra_incdirs, name: 'radare2 ABI 158 semantic type and preserving signature APIs')
-  error('r2ghidra requires radare2 ABI 158 or newer with contextual declarations, array bounds, prototype knowledge, type namespaces, signature record identity and operational-CC-preserving structured preparation; rebuild the matching host SDK')
+''', dependencies: r_core, include_directories: r2ghidra_incdirs, name: 'radare2 ABI 159 semantic type and preserving signature APIs')
+  error('r2ghidra requires radare2 ABI 159 or newer with intrinsic function conventions, contextual declarations, array bounds, prototype knowledge, type namespaces, signature record identity and operational-CC-preserving structured preparation; rebuild the matching host SDK')
 endif
 
 r2ghidra_version = meson.project_version()

@@ -35,6 +35,52 @@ INFO: pdgw: no changes
 EOF
 RUN
 
+NAME=equal effective callback models keep supplied and omitted knowledge distinct through harvest
+FILE=hex://cb
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+af+ 0 presence
+afb+ 0 0 1
+e types.plugin=c2
+e r2ghidra.lang=x86:LE:16:Protected Mode
+tcc ax __cdecl16near(stack)
+e anal.cc=__cdecl16near
+e anal.cc
+"afs void presence(uint16_t (far *omitted)(uint16_t value), uint16_t (__attribute__((r2_cc(\"__cdecl16near\"))) far *supplied)(uint16_t value), uint16_t (*values)[010])"
+afc __cdecl16near
+pdgd~prototype model="__cdecl16near"~extrapop="2"~modellock="true"~?
+pdgd~prototype model="__cdecl16near"~modeldeclared="true"~?
+pdgd~metatype="code"~?
+pdg~presence(
+pdgw
+afs
+tk func.presence.arg.0
+tk func.presence.arg.1
+tk func.presence.arg.2
+pdgd~prototype model="__cdecl16near"~extrapop="2"~modellock="true"~?
+pdgd~prototype model="__cdecl16near"~modeldeclared="true"~?
+pdgd~metatype="code"~?
+pdg~presence(
+EOF
+EXPECT=<<EOF
+__cdecl16near
+3
+1
+2
+presence(uint16_t (far *omitted)(uint16_t),uint16_t (__attribute__((r2_cc("__cdecl16near"))) far *supplied)(uint16_t),
+void presence (uint16_t (far *omitted)(uint16_t value), uint16_t (__attribute__((r2_cc("__cdecl16near"))) far *supplied)(uint16_t value), uint16_t (near *values)[8]);
+uint16_t (far *)(uint16_t value),omitted
+uint16_t (__attribute__((r2_cc("__cdecl16near"))) far *)(uint16_t value),supplied
+uint16_t (near *)[8],values
+3
+1
+2
+presence(uint16_t (far *omitted)(uint16_t),uint16_t (__attribute__((r2_cc("__cdecl16near"))) far *supplied)(uint16_t),
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
 NAME=compound return headers and annotations survive manual declaration and writeback
 FILE=hex://b83412cb
 ARGS=-a x86 -b 16 -e log.level=0

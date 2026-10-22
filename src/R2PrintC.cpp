@@ -63,6 +63,25 @@ void R2PrintC::setOptionNoCasts(bool nc) {
 	option_nocasts = nc;
 }
 
+void R2PrintC::emitTypeModel(const FuncProto *proto) {
+	if (!proto->isModelDeclared ()) {
+		return;
+	}
+	string attribute = "__attribute__((r2_cc(\"";
+	for (char ch : proto->getModelName ()) {
+		if (static_cast<unsigned char>(ch) < 32) {
+			throw LowlevelError ("Invalid callback convention name");
+		}
+		if (ch == '\\' || ch == '"') {
+			attribute += '\\';
+		}
+		attribute += ch;
+	}
+	attribute += "\")))";
+	emit->print (attribute, Emit::keyword_color);
+	emit->spaces (1);
+}
+
 bool R2PrintC::expandTypeName(const Datatype *type) const {
 	auto arch = dynamic_cast<R2Architecture *>(glb);
 	return arch && arch->getTypeFactory ()->isFunctionRecord (type);
