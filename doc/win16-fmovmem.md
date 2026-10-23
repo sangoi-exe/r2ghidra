@@ -4,6 +4,12 @@ The native x86 16-bit compiler specification provides `borland_fmovmem_16far` fo
 
 The manual helper procedure below is a narrow, explicitly supplied analysis contract, not automatic toolchain detection. Native host recognition is a separate host-plugin responsibility; this bridge build does not install it. The bridge automatically selects `x86:LE:16:Protected Mode` for loaded x86/16 NE inputs (`RBinInfo.rclass == ne`), while MZ/raw/other x86/16 inputs retain Real Mode and non-16 x86 retains its default flavor. An explicit `r2ghidra.lang` still overrides automatic selection. Matching host loading, engine and compiled language specifications are required. Stock `__cdecl16far` is not a substitute for the qualified model: it makes stronger ES/DF preservation claims.
 
+## NE analysis coordinates and saved state
+
+The host and isolated Protected Mode language use the same C48 analysis coordinate: `((ut64)selector << 32) | offset32`. Native RAM addresses occupy six bytes. The NE selector is a synthetic segment ordinal, not a demonstrated Windows runtime selector. Physical file offsets and encoded machine pointers remain separate: ordinary near pointers occupy two bytes, ordinary far pointers four bytes, and an instruction's m16:32 operand six bytes. Formal stack offsets remain two bytes; address-size prefixes do not change the selected SP:SS stack model. MZ/OMF and Real Mode retain their existing address models.
+
+Old NE coordinate-based analysis requires fresh analysis with the matching components. There is no migration or dual-coordinate runtime. Binary projects identified by existing loader/state metadata and normal generated legacy projects identified by their configuration refuse before session reset or state application when they use the old coordinate. Partial projects and arbitrary scripts without sufficient identity have no guaranteed automatic detection; absence of refusal does not establish compatibility. Preserve original projects and executables. Fresh C48 project save/load/restore must be qualified through the production host path, not inferred from 64-bit storage fields.
+
 ## Build the matching local components
 
 `subprojects/ghidra-native.wrap` is the single engine URL/revision pin: Meson reads it directly, and `subprojects/ghidra-native.mk` derives its Make settings from it. It selects the `sangoi-exe/ghidra-native` fork at the exact engine commit named by its `revision` field, not upstream 0.7.2. The local procedure below reads that field and can consume the exact committed revision without establishing its remote publication or acquisition. A fresh network-only build of the current pin is not yet established. Do not replace the pin with an older engine merely to make a remote fetch succeed.
@@ -55,7 +61,7 @@ r2 -q -e cfg.plugins=false -e scr.color=0 -e bin.relocs.apply=true -c "L $build/
 e r2ghidra.sleighhome=/absolute/r2ghidra/subprojects/ghidra-native/src/Processors/x86/data/languages
 ```
 
-Replace the absolute language path with the local r2ghidra source path. Use the directory containing `x86.ldefs` and the compiled `x86.sla`, not the generic `Processors` root; the `sleigh-x86` target compiles these specifications. The plugin and language files must come from the same pinned engine candidate.
+Replace the absolute language path with the local r2ghidra source path. Use the directory containing matching `x86.ldefs`, `x86-16-protected.pspec` and compiled `x86-16-protected.sla`, alongside the existing x86 languages, not the generic `Processors` root. The `sleigh-x86` target compiles these specifications. The plugin and language files must come from the same pinned engine candidate; `x86.sla` alone does not supply the isolated Protected Mode language.
 
 ## Target-correct declarations and pointer layers
 
@@ -71,9 +77,13 @@ Ordinary identifiers and C tags have separate identities. `typedef uint16_t Alia
 
 The shared parser uses the visible type environment rather than spelling heuristics. With a visible typedef `T`, `int f(int (T))` retains a callback parameter, while an actual grouped parameter name remains a scalar. The bridge carries supported `const` and `volatile` at their declarator layers, including typedef-intrinsic qualifiers. Native early access handling retains volatile memory effects before elimination; C `const` is not a claim that memory is native readonly. Unsupported restrict/atomic qualification and C++ references refuse rather than being erased. Harvest preserves unsupported source declarations instead of overwriting them with an unrelated inferred type.
 
-For the selected x86/16 segmented languages, unqualified C pointers use the native two-byte default, explicit `near *` uses two bytes and explicit `far *` uses four bytes. Each layer is independent: `uint16_t far * near *` is a near pointer to a far pointer. Pointer-to-array and function-pointer parentheses remain significant. The specialized C printer spells each representable near/far layer from its native width; other targets retain ordinary native pointer syntax. An explicit near/far declaration on an unsupported target fails rather than becoming an unrelated type. Pointers used internally for synthetic analysis coordinates retain their coordinate width; they do not set the default C data model or establish runtime selectors.
+For the selected x86/16 segmented languages, unqualified C pointers use the native two-byte default, explicit `near *` uses two bytes and explicit `far *` uses four bytes. Each layer is independent: `uint16_t far * near *` is a near pointer to a far pointer. Pointer-to-array and function-pointer parentheses remain significant. The specialized C printer spells each representable near/far layer from its native width; other targets retain ordinary native pointer syntax. An explicit near/far declaration on an unsupported target fails rather than becoming an unrelated type. A six-byte Protected Mode coordinate pointer prints as `__r2_analysis48 *`, not `far *`. This is analysis-only output, not a historical C pointer kind or accepted source declaration. Reverse conversion refuses an unrepresentable coordinate pointer rather than saving it as an ordinary far pointer. Coordinate width does not set the default C data model or establish runtime selectors.
 
 The x86/16 model uses two-byte `int` and `short`, four-byte `long` and `float`, eight-byte `double`, and ten-byte `long double`. Its selected local analysis model keeps `long long` at eight bytes. The latter is not a claim that Borland 3.1 accepts `long long` source. Fixed-width names such as `uint32_t` remain fixed-width independently of the fundamental defaults.
+
+Enum import consumes the host's effective layout and passes the explicit byte extent to the native factory. An omitted host enum width follows target `int`; explicit widths retain their own extent through native import and arrays. RAM coordinate width does not change enum defaults, and unavailable or unrepresentable host extents refuse instead of selecting a native fallback.
+
+Host BP variables already store entry-frame-normalized offsets. Import and harvest consume those offsets directly, without adding another BP or extrapop bias. Genuine prototype return-frame/extrapop facts remain separate. For a saved BP of two bytes, a physical `[BP+6]` input has host/native entry-frame offset four; choosing a near or far model does not move that stored variable.
 
 Anonymous/member callbacks remain intrinsic FUNCTION declarations, with an optional supplied convention on the shared `RTypeDeclNode.function.callconv` field; `c2` does not manufacture global `func.SCOPE` records for them. Genuinely named functions and callback typedefs retain `func.NAME` metadata and explicit pointer representation around the function reference, for example `typedef.CB=func.CB far *`; real aliases retain their identity. Bare `func.CB` denotes a function type, not a sized callback object. Previously saved callback declarations relying on the old implicit-pointer handle require re-import through `c2`; there is no migration or dual interpretation. The optional TinyCC parser still emits obsolete implicit callback handles and is outside this qualified declaration path; it explicitly refuses the `r2_cc` analysis carrier it cannot represent. Use `types.plugin=c2` for these declarations rather than expecting a compatibility coercion. The removed `__r2ghidra_t_` workaround no longer creates scratch declarations or receives special reverse-conversion treatment. A retained alias is treated as an ordinary named alias, not unwrapped because of its prefix. None of these pointer qualifiers selects an operational calling convention.
 
@@ -117,22 +127,22 @@ Continue in that isolated read-only session, or use a private installation of th
 ```text
 e r2ghidra.timeout=30000
 pd:gss
-p8 128 @ 0x110e8
-pd:gsd 49 @ 0x110e8
-pd:gsd 20 @ 0x11141
+p8 128 @ 0x1000010e8
+pd:gsd 49 @ 0x1000010e8
+pd:gsd 20 @ 0x100001141
 ```
 
-With the native NE loader and `bin.relocs.apply=true`, this specific SimTower file maps file offset `0x32e8` to analysis address `0x110e8`, the start of the 89-byte core; file offset `0x3341` maps to `0x11141`, the distinct 39-byte wrapper. These are segment-ordinal coordinates `(segment << 16) | offset`, not flat file addresses or Windows runtime selectors. A second qualified copy is at `0x11294`/`0x112ed`. Require the loaded binary to identify as NE and the automatically matched language to be Protected Mode without an explicit override. Require all 128 bytes below, not only a prefix or historical helper name:
+With the native NE loader and `bin.relocs.apply=true`, this specific SimTower file maps file offset `0x32e8` to analysis address `0x1000010e8`, the start of the 89-byte core; file offset `0x3341` maps to `0x100001141`, the distinct 39-byte wrapper. These are C48 segment-ordinal coordinates, not flat file addresses or Windows runtime selectors. A second qualified copy is at `0x100001294`/`0x1000012ed`. Require the loaded binary to identify as NE and the automatically matched language to be Protected Mode without an explicit override. Require all 128 bytes below, not only a prefix or historical helper name:
 
 ```text
 45558bec56571e8b4e0c8b5e0a8b56088b46063bd1770c72043bc37306fdb80100eb03fc33c0c57606c47e0a8b4e0e0bc0740603f14e03f94ff7c701007404e311a4492bf02bf8d1e9f3a5730503f003f8a4fc1f5f5e5d4dcb45558bec5657ff760eff7608ff7606ff760cff760a0ee88eff83c40a8b56088b46065f5e5d4dcb
 ```
 
-The core's instruction lengths are `1,1,2,1,1,1,3,3,3,3,2,2,2,2,2,1,3,2,1,2,3,3,3,2,2,2,1,2,1,4,2,2,1,1,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1`. The wrapper's are `1,1,2,1,1,3,3,3,3,3,1,3,3,3,3,1,1,1,1,1`. Check native decoding in 16-bit context, the final plain RETF at `0x11140`, and the wrapper's PUSH CS at `0x11156` followed by a near CALL at `0x11157` targeting `0x110e8`. Disassembly/p-code can include internal repeat phases; do not mistake those for additional machine instructions. These addresses are specific to this file, not universal NE virtual addresses.
+The core's instruction lengths are `1,1,2,1,1,1,3,3,3,3,2,2,2,2,2,1,3,2,1,2,3,3,3,2,2,2,1,2,1,4,2,2,1,1,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1`. The wrapper's are `1,1,2,1,1,3,3,3,3,3,1,3,3,3,3,1,1,1,1,1`. Check native decoding in 16-bit context, the final plain RETF at `0x100001140`, and the wrapper's PUSH CS at `0x100001156` followed by a near CALL at `0x100001157` targeting `0x1000010e8`. Disassembly/p-code can include internal repeat phases; do not mistake those for additional machine instructions. These addresses are specific to this file, not universal NE virtual addresses.
 
 ## Consume automatically qualified host contracts
 
-With the matching native host Borland analysis plugin, ordinary `aaa` qualifies both move core/wrapper pairs in the original SimTower input at `0x110e8`/`0x11141` and `0x11294`/`0x112ed`. Qualification, preservation of conflicting analysis and the address-linked typed facts belong to that host plugin, not this bridge. Do not replace those facts with the manual setup below merely to make decompilation succeed.
+With the matching native host Borland analysis plugin, ordinary `aaa` qualifies both move core/wrapper pairs in the original SimTower input at `0x1000010e8`/`0x100001141` and `0x100001294`/`0x1000012ed`. Qualification, preservation of conflicting analysis and the address-linked typed facts belong to that host plugin, not this bridge. Do not replace those facts with the manual setup below merely to make decompilation succeed.
 
 The bridge consumes the host's canonical structured function signature: address-linked or name-resolved prototypes supply the return type, ordered parameters and noreturn metadata. The function's current operational calling convention selects the native model; a declaration's stored convention does not override a later explicit `afc` selection. Harvest selects the host's prepared preserve-operational-convention option, so a real `pdgw` type update does not reset that choice. Raw source convention metadata, including absence, stays separate; an independent callback type retains its own recorded convention. An authoritative complete prototype locks the operational model through the existing native prototype importer, including an explicit zero-argument prototype. Renaming a function does not invalidate its address-linked contract. Variable-derived signatures remain inference; they do not manufacture a locked declaration.
 
@@ -170,9 +180,9 @@ Supplied/default DF zero is an analysis assumption, not proof of runtime DF, ter
 In a fresh disposable analysis session without an automatically qualified contract, define a bounded host function without automatic argument inference, the two-word storage record, and the explicit signature:
 
 ```text
-af+ 0x110e8 qualified_borland_fmovmem
-afb+ 0x110e8 0x110e8 89
-s 0x110e8
+af+ 0x1000010e8 qualified_borland_fmovmem
+afb+ 0x1000010e8 0x1000010e8 89
+s 0x1000010e8
 "td typedef unsigned short WORD;"
 "td struct FarAddress16 { WORD offset; WORD selector; };"
 "afs void qualified_borland_fmovmem(struct FarAddress16 source, struct FarAddress16 destination, WORD byte_count)"
@@ -199,6 +209,6 @@ The printed result must not imply a selector-free host-pointer mapping. Unknown 
 
 ## Correlate original-image edges
 
-Open originals read-only with `bin.relocs.apply=true`, never `-w`, and do not execute them. For Johnny Castaway (`SCRANTIC.EXE`, SHA-256 `f0552c281a2a9b367ad5f41402a907a3c99e73ad0a221ba14d063e31cff594ac`), compare host `aoj 1` and native `pd:gsd 1` at `0x100b0`: both must target `0x20000`. At entry, the five distinct import targets are KERNEL ordinals 91/23/30/132 and USER ordinal 5, not five identical `ffff` operands. For SimTower (SHA-256 `2825a3c53f77945c63b6d72e26faa7dde5ddd56c31ca668e67a12576d7feca96`), compare `0x10006 → 0x4f02d7`, `0x4f02ee → 0x11a55`, and the actual nonfirst-segment near CALL `0x4f00a1 → 0x4f3649`. File-offset decoding or a nonempty C result cannot prove these mapped edges.
+Open originals read-only with `bin.relocs.apply=true`, never `-w`, and do not execute them. For Johnny Castaway (`SCRANTIC.EXE`, SHA-256 `f0552c281a2a9b367ad5f41402a907a3c99e73ad0a221ba14d063e31cff594ac`), compare host `aoj 1` and native `pd:gsd 1` at `0x1000000b0`: both must target `0x200000000`. At entry, the five distinct import targets are KERNEL ordinals 91/23/30/132 and USER ordinal 5, not five identical `ffff` operands. For SimTower (SHA-256 `2825a3c53f77945c63b6d72e26faa7dde5ddd56c31ca668e67a12576d7feca96`), compare `0x100000006 → 0x4f000002d7`, `0x4f000002ee → 0x100001a55`, and the actual nonfirst-segment near CALL `0x4f000000a1 → 0x4f00003649`. File-offset decoding or a nonempty C result cannot prove these mapped edges.
 
 Use bounded host functions and `pd:gx` to inspect analyzed CALL target varnodes/ordered operands, and `pd:gd` to inspect the actual supplied context. `pd:gj.pcode_ops` contains space/offset/uniq/opcode/dead-state metadata, not full operands; it cannot prove selector dependencies. Raw instruction p-code and analyzed function p-code are different observation boundaries. Unobserved runtime selectors, imported API execution, and final combined host-helper/MCP behavior remain explicit proof gaps.
