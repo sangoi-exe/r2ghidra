@@ -92,10 +92,13 @@ void R2PrintC::pushPointerType(const TypePointer *type) {
 	const RTypePointerKind kind = arch ? arch->getTypeFactory ()->pointerKind (type) : R_TYPE_POINTER_DEFAULT;
 	static OpToken nearPointer = { "near *", "", 1, 62, false, OpToken::unary_prefix, 0, 0, nullptr };
 	static OpToken farPointer = { "far *", "", 1, 62, false, OpToken::unary_prefix, 0, 0, nullptr };
+	static OpToken analysisPointer = { "__r2_analysis48 *", "", 1, 62, false, OpToken::unary_prefix, 0, 0, nullptr };
 	if (kind == R_TYPE_POINTER_NEAR) {
 		pushOp (&nearPointer, nullptr);
 	} else if (kind == R_TYPE_POINTER_FAR) {
 		pushOp (&farPointer, nullptr);
+	} else if (arch && arch->getTypeFactory ()->hasSegmentedPointers () && arch->getDefaultDataSpace ()->getAddrSize () == 6 && type->getSize () == 6 && type->getWordSize () == arch->getDefaultDataSpace ()->getWordSize ()) {
+		pushOp (&analysisPointer, nullptr);
 	} else {
 		PrintC::pushPointerType (type);
 	}

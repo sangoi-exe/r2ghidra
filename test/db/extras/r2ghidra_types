@@ -1,3 +1,63 @@
+NAME=C48 mapped code data comments and annotations retain independent high fields
+FILE=hex://b8cefa8ed867a1efcdab89cbefbe
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+e r2ghidra.lang=x86:LE:16:Protected Mode
+e r2ghidra.roprop=0
+e r2ghidra.casts=true
+om-*
+om 3 0xabcd12345678 12 0 r-x
+om 3 0xface89abcdef 2 12 r--
+s 0xabcd12345678
+af+ 0xabcd12345678 high_coordinate
+afb+ 0xabcd12345678 0xabcd12345678 12
+"afs uint16_t high_coordinate(void)"
+tcc ax __cdecl16far(stack)
+afc __cdecl16far
+CC high_code_comment @ 0xabcd12345678
+p8 12
+pdg~return
+pdgd~addr space="ram" offset="0xabcd12345678"~?
+pdgx~addr space="ram" offset="0xface89abcdef" size="2"~?
+f high_data 2 @ 0xface89abcdef
+pdg~high_coordinate
+pdg~high_code_comment
+pdg~return
+pdgj~{annotations[2].type}
+pdgj~{annotations[2].name}
+pdgj~{annotations[2].offset}
+pdgj~{annotations[8].offset}
+pdgj~{annotations[12].type}
+pdgj~{annotations[12].offset}
+f-high_data
+e r2ghidra.roprop=3
+pdg~return
+pdgw
+afs
+afc
+EOF
+EXPECT=<<EOF
+b8cefa8ed867a1efcdab89cb
+    return *(uint16_t __r2_analysis48 *)0xface89abcdef;
+2
+2
+uint16_t __cdecl16far high_coordinate(void)
+    //high_code_comment
+    return _high_data;
+function_name
+high_coordinate
+188897262065272
+188897262065272
+global_variable
+275764979944943
+    return 0xbeef;
+uint16_t high_coordinate (void);
+__cdecl16far
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
 NAME=callback writeback recovers aggregate return and omits ABI hidden inputs
 FILE=hex://4889f8c3
 ARGS=-a x86 -b 64 -e log.level=0

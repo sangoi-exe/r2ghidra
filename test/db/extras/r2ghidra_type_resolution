@@ -1074,12 +1074,12 @@ pdgd~addr space="stack" offset="0x2"~?
 pdgd~type name="" size="4" metatype="ptr"~?
 pdgx~<op code="9"~?
 pdgx~<op code="2"~?
-pdgj~{pcode_ops[0].offset}
-pdgj~{pcode_ops[0].opcode}
-pdgj~{pcode_ops[0].is_dead}
-pdgj~{pcode_ops[1].offset}
-pdgj~{pcode_ops[1].opcode}
-pdgj~{pcode_ops[1].is_dead}
+pdgj~{pcode_ops[5].offset}
+pdgj~{pcode_ops[5].opcode}
+pdgj~{pcode_ops[5].is_dead}
+pdgj~{pcode_ops[7].offset}
+pdgj~{pcode_ops[7].opcode}
+pdgj~{pcode_ops[7].is_dead}
 EOF
 EXPECT=<<EOF
 1
