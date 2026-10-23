@@ -29,7 +29,6 @@ struct HarvestProto {
 struct Harvest {
 	HarvestProto proto;
 	std::vector<HarvestVar> locals;
-	int4 extraPop = 0;
 	uintb stackHighest = 0;
 };
 

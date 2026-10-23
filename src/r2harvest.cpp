@@ -134,13 +134,13 @@ static bool PrototypeStorageMatches(R2Architecture &arch, const FuncProto &proto
 }
 
 void HarvestFuncdata(R2Architecture &arch, Funcdata *func, Harvest &out) {
-	const int4 defaultSize = arch.translate->getDefaultSize ();
+	int4 defaultSize;
+	{
+		RCoreLock core (arch.getCore ());
+		defaultSize = core->anal->config->bits / 8;
+	}
 	out.stackHighest = arch.getStackSpace ()->getHighest ();
 	FuncProto &proto = func->getFuncProto ();
-	out.extraPop = proto.getExtraPop ();
-	if (out.extraPop == ProtoModel::extrapop_unknown) {
-		out.extraPop = defaultSize;
-	}
 	std::vector<bool> paramsMatch (proto.numParams (), false);
 	out.proto.valid = PrototypeStorageMatches (arch, proto, paramsMatch);
 	out.proto.noreturn = proto.isNoReturn ();
@@ -241,8 +241,7 @@ static RAnalVar *MatchVar(RCore *core, RAnalFunction *fcn, const HarvestVar &hv,
 	st64 gdelta = (hv.stackOff > h.stackHighest / 2)
 		? (st64)hv.stackOff - (st64)h.stackHighest - 1
 		: (st64)hv.stackOff;
-	int delta = (int)(gdelta - fcn->bp_off + h.extraPop);
-	return r_anal_function_get_var (fcn, R_ANAL_VAR_KIND_BPV, delta);
+	return r_anal_function_get_var (fcn, R_ANAL_VAR_KIND_BPV, (int)gdelta);
 }
 
 static void WriteVar(RCore *core, RAnalFunction *fcn, const HarvestVar &hv, const Harvest &h, std::set<RAnalVar *> &seen, int *types, int *names) {

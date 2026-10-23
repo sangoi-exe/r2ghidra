@@ -151,15 +151,14 @@ struct FunctionVars {
 	R2Architecture *arch;
 	RAnalFunction *fcn;
 	ProtoModel *proto;
-	int4 stackBias;
 	int default_size;
 	ParamActive params;
 	RangeList ranges;
 	std::map<RAnalVar *, Datatype *> types;
 	bool enabled;
 
-	FunctionVars(RCore *core, R2Architecture *arch, RAnalFunction *fcn, ProtoModel *proto, int4 stackBias, int default_size)
-		: core (core), arch (arch), fcn (fcn), proto (proto), stackBias (stackBias), default_size (default_size),
+	FunctionVars(RCore *core, R2Architecture *arch, RAnalFunction *fcn, ProtoModel *proto, int default_size)
+		: core (core), arch (arch), fcn (fcn), proto (proto), default_size (default_size),
 		  params (false), enabled (r_config_get_b (core->config, "r2ghidra.vars")) {
 		collect ();
 	}
@@ -189,7 +188,7 @@ struct FunctionVars {
 		case R_ANAL_VAR_KIND_BPV:
 		{
 			auto stackSpace = arch->getStackSpace ();
-			int delta = var->delta + fcn->bp_off - stackBias;
+			int delta = var->delta;
 			uintb off = delta >= 0 ? delta : stackSpace->getHighest () + delta + 1;
 			return Address (stackSpace, off);
 		}
@@ -620,7 +619,6 @@ FunctionSymbol *R2Scope::registerFunction(RAnalFunction *fcn) const {
 	}
 
 	const int4 extraPop = proto? proto->getExtraPop (): ProtoModel::extrapop_unknown;
-	const int4 stackBias = extraPop == ProtoModel::extrapop_unknown? arch->translate->getDefaultSize (): extraPop;
 
 	const int default_size = core->anal->config->bits / 8;
 	bool used_sig_args = false;
@@ -629,7 +627,7 @@ FunctionSymbol *R2Scope::registerFunction(RAnalFunction *fcn) const {
 	std::vector<ParameterPieces> signatureStorage;
 	std::vector<ParameterPieces> variableInputHints;
 
-	FunctionVars vars (core, arch, fcn, proto, stackBias, default_size);
+	FunctionVars vars (core, arch, fcn, proto, default_size);
 
 	if (proto) {
 		proto->deriveInputMap(&vars.params);

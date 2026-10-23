@@ -1,3 +1,94 @@
+NAME=automatic BP arguments use entry-frame offsets independent of near or far model
+FILE=hex://558bec8b46065dcb
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+af
+afn bp_auto
+e r2ghidra.lang=x86:LE:16:Protected Mode
+e r2ghidra.write.sig=false
+tcc ax __cdecl16near(stack)
+tcc ax __cdecl16far(stack)
+afvt arg_6h uint16_t[01]
+afc __cdecl16near
+afvbj
+pdgd~symbol name="arg_6h"~?
+pdgd~addr space="stack" offset="0x4"~?
+pdg~return
+pdgw
+afvbj
+afc
+afvt arg_6h uint16_t[01]
+afc __cdecl16far
+pdgd~symbol name="arg_6h"~?
+pdgd~addr space="stack" offset="0x4"~?
+pdg~return
+pdgw
+afvbj
+afc
+EOF
+EXPECT=<<EOF
+[{"name":"arg_6h","kind":"arg","type":"uint16_t[01]","ref":{"base":"bp","offset":6}}]
+1
+1
+    return arg_6h[0];
+[{"name":"arg_6h","kind":"arg","type":"uint16_t [1]","ref":{"base":"bp","offset":6}}]
+__cdecl16near
+1
+1
+    return arg_6h[0];
+[{"name":"arg_6h","kind":"arg","type":"uint16_t [1]","ref":{"base":"bp","offset":6}}]
+__cdecl16far
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=manual BP arguments use entry-frame offsets independent of near or far model
+FILE=hex://558bec8b46065dcb
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+af
+afn bp_manual
+afv-
+afvb 6 bp_value uint16_t[01]
+e r2ghidra.lang=x86:LE:16:Protected Mode
+e r2ghidra.write.sig=false
+tcc ax __cdecl16near(stack)
+tcc ax __cdecl16far(stack)
+afc __cdecl16near
+afvbj
+pdgd~symbol name="bp_value"~?
+pdgd~addr space="stack" offset="0x4"~?
+pdg~return
+pdgw
+afvbj
+afc
+afvt bp_value uint16_t[01]
+afc __cdecl16far
+pdgd~symbol name="bp_value"~?
+pdgd~addr space="stack" offset="0x4"~?
+pdg~return
+pdgw
+afvbj
+afc
+EOF
+EXPECT=<<EOF
+[{"name":"bp_value","kind":"arg","type":"uint16_t[01]","ref":{"base":"bp","offset":6}}]
+1
+1
+    return bp_value[0];
+[{"name":"bp_value","kind":"arg","type":"uint16_t [1]","ref":{"base":"bp","offset":6}}]
+__cdecl16near
+1
+1
+    return bp_value[0];
+[{"name":"bp_value","kind":"arg","type":"uint16_t [1]","ref":{"base":"bp","offset":6}}]
+__cdecl16far
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
 NAME=unresolved declared arguments and returns refuse instead of substituting storage
 FILE=hex://89f8c3
 ARGS=-a x86 -b 64 -e log.level=0
