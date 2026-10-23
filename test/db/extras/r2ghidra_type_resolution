@@ -1268,6 +1268,99 @@ EXPECT_ERR=<<EOF
 EOF
 RUN
 
+NAME=explicit host enum widths retain native identities and distinct array strides
+FILE=hex://c3
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+af+ 0 enum_width
+afb+ 0 0 1
+e r2ghidra.lang=x86:LE:16:Protected Mode
+"td enum Tiny8 {T0, T1}; enum Wide32 {W0, W1};"
+tk tags/type.Tiny8.size=8
+tk tags/type.Wide32.size=32
+tk tags/type.Tiny8.size
+tk tags/type.Wide32.size
+"afs void enum_width(enum Tiny8 (*tiny)[3], enum Wide32 (*wide)[3])"
+tcc ax __cdecl16near(stack)
+afc __cdecl16near
+pdgd~type name="Tiny8"~label="enum Tiny8"~size="1"~?
+pdgd~type name="Wide32"~label="enum Wide32"~size="4"~?
+pdgd~size="3" metatype="array" arraysize="3"~?
+pdgd~size="12" metatype="array" arraysize="3"~?
+pdg~enum_width(
+EOF
+EXPECT=<<EOF
+8
+32
+1
+1
+1
+1
+void __cdecl16near enum_width(enum Tiny8 (near *tiny) [3],enum Wide32 (near *wide) [3])
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=omitted enum width consumes root target int width and preserves its alias
+FILE=hex://c3
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+af+ 0 enum_default
+afb+ 0 0 1
+e r2ghidra.lang=x86:LE:16:Protected Mode
+tk type.int.size=16
+"td enum Default {D0, D1}; typedef enum Default DefaultAlias;"
+tk type.int.size
+tk tags/type.Default.size~?
+"afs void enum_default(enum Default (*values)[3], DefaultAlias *alias)"
+tcc ax __cdecl16near(stack)
+afc __cdecl16near
+pdgd~type name="Default"~label="enum Default"~size="2"~?
+pdgd~def name="DefaultAlias"~?
+pdgd~size="6" metatype="array" arraysize="3"~?
+pdg~enum_default(
+EOF
+EXPECT=<<EOF
+16
+0
+1
+1
+1
+void __cdecl16near enum_default(enum Default (near *values) [3],DefaultAlias near *alias)
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=unavailable nonbyte and native unrepresentable enum widths refuse instead of selecting a default
+FILE=hex://c3
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+af+ 0 enum_refusal
+afb+ 0 0 1
+e r2ghidra.lang=x86:LE:16:Protected Mode
+"td enum Invalid {I0, I1};"
+"afs void enum_refusal(enum Invalid *value)"
+tcc ax __cdecl16near(stack)
+afc __cdecl16near
+tk tags/type.Invalid.size=7
+pdgj
+tk tags/type.Invalid.size=17179869184
+pdgj
+tk tags/type.Invalid.size=0
+tk type.int.size=0
+pdgj
+EOF
+EXPECT=<<EOF
+{"errors":["Ghidra Decompiler Error: Failed to match arg type enum Invalid * for function enum_refusal: Unable to resolve type 'enum Invalid'"]}
+{"errors":["Ghidra Decompiler Error: Failed to match arg type enum Invalid * for function enum_refusal: Unable to resolve type 'enum Invalid'"]}
+{"errors":["Ghidra Decompiler Error: Failed to match arg type enum Invalid * for function enum_refusal: Unable to resolve type 'enum Invalid'"]}
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
 NAME=operational far convention overrides a supplied near record for concrete import
 FILE=hex://c3
 ARGS=-a x86 -b 16 -e log.level=0

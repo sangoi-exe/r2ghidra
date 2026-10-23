@@ -2042,7 +2042,7 @@ EXPECT=<<EOF
 void sym.Aeropause(struct Bright *bright,int32_t argc,char **argv)
 
 {
-    uint uVar1;
+    enum Ambassador AVar1;
     int iVar2;
     struct Morning *pMVar3;
     int64_t var_18h;
@@ -2054,51 +2054,51 @@ void sym.Aeropause(struct Bright *bright,int32_t argc,char **argv)
     bright->morning->saved_argc = argc;
     bright->morning->saved_argv = argv;
     if (bright->morning->saved_argc < 2) {
-        *&bright->ambassador = AMBASSADOR_PURE;
+        bright->ambassador = AMBASSADOR_PURE;
     }
     else {
         (bright->window).sunlight = bright->morning->saved_argv[1];
         iVar2 = sym.imp.strcmp((bright->window).sunlight,"the  ");
         if (iVar2 == 0) {
-            *&bright->ambassador = AMBASSADOR_REASON;
+            bright->ambassador = AMBASSADOR_REASON;
         }
         else {
             iVar2 = sym.imp.strcmp((bright->window).sunlight,"dark");
             if (iVar2 == 0) {
-                *&bright->ambassador = AMBASSADOR_REVOLUTION;
+                bright->ambassador = AMBASSADOR_REVOLUTION;
             }
             else {
                 iVar2 = sym.imp.strcmp((bright->window).sunlight,"third");
                 if (iVar2 == 0) {
-                    *&bright->ambassador = AMBASSADOR_ECHOES;
+                    bright->ambassador = AMBASSADOR_ECHOES;
                 }
                 else {
-                    *&bright->ambassador = AMBASSADOR_MILLION;
+                    bright->ambassador = AMBASSADOR_MILLION;
                 }
             }
         }
     }
-    uVar1 = bright->ambassador;
-    if (uVar1 < (AMBASSADOR_WALL|AMBASSADOR_REASON)) {
+    AVar1 = bright->ambassador;
+    if (AVar1 < (AMBASSADOR_WALL|AMBASSADOR_REASON)) {
     //switch table (5 cases) at 0x402088
-        switch(uVar1) {
-        case 0:
+        switch(AVar1) {
+        case AMBASSADOR_PURE:
             sym.imp.printf("pure");
             break;
-        case 1:
+        case AMBASSADOR_REASON:
             sym.imp.printf("reason");
             break;
-        case 2:
+        case AMBASSADOR_REVOLUTION:
             sym.imp.printf("revolution");
             break;
-        case 3:
+        case AMBASSADOR_ECHOES:
             sym.imp.printf("echoes");
             break;
-        case 4:
+        case AMBASSADOR_WALL:
             sym.imp.printf("wall");
         }
     }
-    else if (uVar1 == AMBASSADOR_MILLION) {
+    else if (AVar1 == AMBASSADOR_MILLION) {
         sym.imp.printf("million");
     }
     sym.PrintAmbassador(bright->ambassador);

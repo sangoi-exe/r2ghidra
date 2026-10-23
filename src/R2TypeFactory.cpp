@@ -615,8 +615,16 @@ Datatype *R2TypeFactory::queryR2Enum(const string &n, TypeResolution &resolution
 	if (namelist.empty()) {
 		return nullptr;
 	}
+	RTypeDeclNode declaration = {};
+	declaration.kind = R_TYPE_DECL_BASE;
+	declaration.base.name = const_cast<char *>(n.c_str ());
+	RTypeLayout layout;
+	if (!r_type_decl_layout (core->anal->sdb_types, &declaration, &layout) || !layout.bits || layout.bits % 8 || layout.bits / 8 > INT_MAX) {
+		arch->addWarning ("Invalid declared extent for enum " + n);
+		return nullptr;
+	}
 	try {
-		auto enumType = getTypeEnum (nativeName (n), nativeId (n), n);
+		auto enumType = getTypeEnum (nativeName (n), nativeId (n), n, static_cast<int4>(layout.bits / 8));
 		map<uintb,string> namemap;
 		TypeEnum::assignValues(namemap,namelist,vallist,assignlist,enumType);
 		setEnumValues(namemap, enumType);
