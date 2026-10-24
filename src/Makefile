@@ -91,9 +91,10 @@ check-radare2-sdk:
 		'  RAnalFunctionSignaturePrepared *prepared = r_anal_function_signature_prepare_structured(nullptr, nullptr, &signature, true, nullptr);' \
 		'  bool applied = r_anal_function_signature_apply(nullptr, nullptr, prepared);' \
 		'  r_anal_function_signature_prepared_free(prepared);' \
-		'  return applied && types;' \
+		'  const char *call_type = r_anal_call_type_at(nullptr, argc);' \
+		'  return applied && types && call_type;' \
 		'}' \
-		| $(CXX) $(CXXFLAGS) $(R2_CFLAGS) -x c++ - -o /dev/null $(R2_LDFLAGS) $(LDFLAGS) || { echo "r2ghidra requires radare2 ABI 159 or newer with intrinsic function conventions, current semantic type APIs and operational-CC-preserving structured preparation; rebuild the matching host SDK" >&2; exit 1; }
+		| $(CXX) $(CXXFLAGS) $(R2_CFLAGS) -x c++ - -o /dev/null $(R2_LDFLAGS) $(LDFLAGS) || { echo "r2ghidra requires radare2 ABI 159 or newer with intrinsic function conventions, current semantic type APIs, operational-CC-preserving structured preparation and the public call-site type query; rebuild the matching host SDK" >&2; exit 1; }
 
 # zlib static build
 ../subprojects/zlib/libz.a: | check-radare2-sdk

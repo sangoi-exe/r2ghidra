@@ -100,10 +100,11 @@ int main(int argc, char **argv) {
   RAnalFunctionSignaturePrepared *prepared = r_anal_function_signature_prepare_structured(nullptr, nullptr, &signature, true, nullptr);
   bool applied = r_anal_function_signature_apply(nullptr, nullptr, prepared);
   r_anal_function_signature_prepared_free(prepared);
-  return applied && types;
+  const char *call_type = r_anal_call_type_at(nullptr, argc);
+  return applied && types && call_type;
 }
-''', dependencies: r_core, include_directories: r2ghidra_incdirs, name: 'radare2 ABI 159 semantic type and preserving signature APIs')
-  error('r2ghidra requires radare2 ABI 159 or newer with intrinsic function conventions, contextual declarations, array bounds, prototype knowledge, type namespaces, signature record identity and operational-CC-preserving structured preparation; rebuild the matching host SDK')
+''', dependencies: r_core, include_directories: r2ghidra_incdirs, name: 'radare2 ABI 159 semantic type, preserving signature and call-site type query APIs')
+  error('r2ghidra requires radare2 ABI 159 or newer with intrinsic function conventions, contextual declarations, array bounds, prototype knowledge, type namespaces, signature record identity, operational-CC-preserving structured preparation and the public call-site type query; rebuild the matching host SDK')
 endif
 
 r2ghidra_version = meson.project_version()

@@ -343,6 +343,49 @@ void PcodeFixupPreprocessor::fixupImportCallDeindirection(RAnalFunction *r2Func,
 	RVecAnalRef_free (refs);
 }
 
+void PcodeFixupPreprocessor::fixupCallSitePrototypes(RAnalFunction *r2Func, Funcdata *ghFunc, RCore *core, R2Architecture &arch) {
+	RCoreLock lock (arch.getCore ());
+	auto space = arch.getDefaultCodeSpace ();
+	r_list_foreach_cpp<RAnalBlock> (r2Func->bbs, [&](RAnalBlock *bb) {
+		ut64 at = bb->addr;
+		const ut64 end = bb->addr + bb->size;
+		while (at < end) {
+			RAnalOp *op = r_core_anal_op (core, at, R_ARCH_OP_MASK_BASIC);
+			if (!op) {
+				break;
+			}
+			const int size = op->size;
+			const ut32 type = op->type & R_ANAL_OP_TYPE_MASK;
+			r_anal_op_free (op);
+			if (size < 1) {
+				break;
+			}
+			const ut64 callPC = at;
+			at += size;
+			if (type != R_ANAL_OP_TYPE_CALL && type != R_ANAL_OP_TYPE_UCALL
+					&& type != R_ANAL_OP_TYPE_CCALL && type != R_ANAL_OP_TYPE_UCCALL) {
+				continue;
+			}
+			const char *name = r_anal_call_type_at (core->anal, callPC);
+			if (!name) {
+				continue;
+			}
+			const std::string typeName = std::string ("func.") + name;
+			Datatype *typeCode = arch.types->findByName (typeName);
+			if (!typeCode || typeCode->getMetatype () != TYPE_CODE) {
+				throw LowlevelError ("Invalid call-site function type " + typeName);
+			}
+			const FuncProto *prototype = static_cast<TypeCode *> (typeCode)->getPrototype ();
+			if (!prototype) {
+				throw LowlevelError ("Missing call-site function prototype " + typeName);
+			}
+			auto overridePrototype = std::make_unique<FuncProto> ();
+			overridePrototype->copy (*prototype);
+			ghFunc->getOverride ().insertProtoOverride (Address (space, callPC), overridePrototype.release ());
+		}
+	});
+}
+
 static bool name_in_csv(const char *csv, const char *name) {
 	if (R_STR_ISEMPTY (csv)) {
 		return false;

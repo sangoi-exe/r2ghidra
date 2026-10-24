@@ -15,6 +15,7 @@ class PcodeFixupPreprocessor
 		static void fixupCallsBeforeData(RAnalFunction *function, ghidra::Funcdata *func, RCore *core, R2Architecture &arch);
 		static void fixupResolvedIndirectCalls(RAnalFunction *function, ghidra::Funcdata *func, RCore *core, R2Architecture &arch);
 		static void fixupImportCallDeindirection(RAnalFunction *function, ghidra::Funcdata *func, RCore *core, R2Architecture &arch);
+		static void fixupCallSitePrototypes(RAnalFunction *function, ghidra::Funcdata *func, RCore *core, R2Architecture &arch);
 		static void fixupVariadicFormatCalls(RAnalFunction *function, ghidra::Funcdata *func, RCore *core, R2Architecture &arch);
 		static bool applyFunctionSignature(const char *funcName, const ghidra::Address &addr, R2Architecture &arch);
 };

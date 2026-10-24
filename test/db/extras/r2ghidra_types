@@ -58,6 +58,48 @@ EXPECT_ERR=<<EOF
 EOF
 RUN
 
+NAME=current exact-PC named prototype reaches an unresolved wide-coordinate call
+FILE=hex://ff1fcb
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+e types.plugin=c2
+e r2ghidra.lang=x86:LE:16:Protected Mode
+om-*
+om 3 0xabcd12345678 3 0 r-x
+s 0xabcd12345678
+af+ 0xabcd12345678 callsite_owner
+afb+ 0xabcd12345678 0xabcd12345678 3
+"afs void callsite_owner(void)"
+tcc ax __cdecl16far(stack)
+afc __cdecl16far
+tk callsite_contract=func
+tk func.callsite_contract.ret=void
+tk func.callsite_contract.args=0
+tk func.callsite_contract.prototype=fixed
+tk func.callsite_contract.cc=__cdecl16far
+pdgd~protooverride~?
+tk calllink.abcd12345679=callsite_contract
+pdgd~protooverride~?
+tk calllink.abcd12345678=callsite_contract
+pdgd~<protooverride~?
+pdgd~prototype model="__cdecl16far" modeldeclared="true" extrapop="4"~?
+pdgx~op code="8"~?
+pdgx~op code="7"~?
+pdg~segmentop
+EOF
+EXPECT=<<EOF
+0
+0
+2
+2
+1
+0
+    (*segmentop(segmentop(unaff_DS,in_BX)[1],*segmentop(unaff_DS,in_BX)))();
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
 NAME=literal DS does not acquire a C48 data identity from a mapped readonly symbol
 FILE=hex://b8cefa8ed867a1efcdab89cbefbe
 ARGS=-a x86 -b 16 -e log.level=0
