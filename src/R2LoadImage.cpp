@@ -6,6 +6,7 @@
 #include "R2Utils.h"
 
 #include <cstring>
+#include <limits>
 
 R2LoadImage::R2LoadImage(RCoreMutex *coreMutex, AddrSpaceManager *addr_space_manager) : LoadImage("radare2_program"),
 	coreMutex(coreMutex),
@@ -17,6 +18,61 @@ R2LoadImage::R2LoadImage(RCoreMutex *coreMutex, AddrSpaceManager *addr_space_man
 void R2LoadImage::loadFill(uint1 *ptr, int4 size, const Address &addr) {
 	RCoreLock core (coreMutex);
 	r_io_read_at (core->io, addr.getOffset(), ptr, size);
+}
+
+bool R2LoadImage::getInstructionField(const InstructionField &field, InstructionFieldUse use, Address &target) const {
+	RCoreLock core (coreMutex);
+	RBinFile *file = r_bin_cur (core->bin);
+	RBinObject *object = file ? file->bo : nullptr;
+	RBinInfo *info = object ? object->info : nullptr;
+	AddrSpace *space = addr_space_manager->getDefaultCodeSpace ();
+	if (!info || !info->rclass || strcmp (info->rclass, "ne") || !info->os || strcmp (info->os, "Windows") ||
+		space->getAddrSize () != 6 || field.source.getSpace () != space || field.size <= 0 || !object->relocs) {
+		return false;
+	}
+
+	const ut64 source = field.source.getOffset ();
+	const ut64 end = source + field.size;
+	// Windows NE fields are at most four bytes; include a pointer starting before this token.
+	const ut64 begin = source > 3 ? source - 3 : 0;
+	if (end - begin > std::numeric_limits<int>::max ()) {
+		throw LowlevelError ("Unrepresentable Windows NE instruction field span");
+	}
+	RBinReloc *reloc = r_bin_reloc_at (object->relocs, begin, end - begin);
+	const RBinReloc *limit = R_VEC_END_ITER (object->relocs);
+	for (; reloc && reloc < limit && reloc->vaddr < end; ++reloc) {
+		const unsigned type = reloc->ntype & 7;
+		const bool pointer = type == 3;
+		const bool selector = type == 2;
+		if (!pointer && !selector && !reloc->import) {
+			continue;
+		}
+		const int width = reloc->type / 8;
+		const ut64 unknown = reloc->vaddr + (pointer && !reloc->import ? 2 : 0);
+		const ut64 relocEnd = reloc->vaddr + width;
+		if (source >= relocEnd || end <= unknown) {
+			continue;
+		}
+		const bool whole = source == reloc->vaddr && field.size == width;
+		const bool component = pointer && field.size == 2 && (source == reloc->vaddr + 2 || (reloc->import && source == reloc->vaddr));
+		const bool expectedWidth = (type == 0 && width == 1) || ((selector || type == 5) && width == 2) || (pointer && width == 4);
+		if (!expectedWidth || (!whole && !component) || field.bigEndian || field.bitOffset != 0 || field.bitSize != field.size * 8) {
+			throw LowlevelError ("Unrepresentable Windows NE relocated instruction field");
+		}
+		if (use == machine_value) {
+			return true;
+		}
+		if (pointer && whole && !reloc->additive) {
+			const ut64 address = reloc->import ? reloc->laddr : reloc->addend;
+			if (address == UT64_MAX || address > space->getHighest ()) {
+				throw LowlevelError ("Unrepresentable Windows NE relocated code target");
+			}
+			target = Address (space, address);
+			return true;
+		}
+		return false;
+	}
+	return false;
 }
 
 string R2LoadImage::getArchType() const {
