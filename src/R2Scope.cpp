@@ -837,6 +837,9 @@ Symbol *R2Scope::registerGlobalVar(RFlagItem *glob, const char *type_str) const 
 	if (!type) {
 		throw LowlevelError ("Failed to match type " + to_string (type_str) + " for global variable " + to_string (glob->name) + ": " + typeError);
 	}
+	if (type->isVolatile ()) {
+		attr |= Varnode::volatil;
+	}
 
 	const char *name = (core->flags->realnames && glob->realname)
 		? glob->realname : glob->name;

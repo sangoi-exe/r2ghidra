@@ -974,6 +974,77 @@ EXPECT_ERR=<<EOF
 EOF
 RUN
 
+NAME=supplied volatile global objects retain both fixed-address reads while ordinary globals optimize
+FILE=hex://0fb70425002000000fb7042500200000c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+avg volatile uint16_t device @ 0x2000
+avg. @ 0x2000
+pdgd~symbol name="device"~volatile="true"~?
+pdgx~<op code="9"~?
+pdg~device~?
+avg uint16_t device @ 0x2000
+avg. @ 0x2000
+pdgd~symbol name="device"~volatile="true"~?
+pdgx~<op code="9"~?
+pdg~device~?
+EOF
+EXPECT=<<EOF
+volatile uint16_t
+1
+2
+2
+uint16_t
+0
+0
+1
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=global pointer object volatility is distinct from pointee volatility
+FILE=hex://488b042500200000488b042500200000c3
+ARGS=-a x86 -b 64 -e log.level=0
+CMDS=<<EOF
+af
+e r2ghidra.lang=x86:LE:64:default:gcc
+avg uint16_t * volatile device @ 0x2000
+avg. @ 0x2000
+pdgd~symbol name="device"~volatile="true"~?
+pdgx~<op code="9"~?
+pdg~device~?
+avg volatile uint16_t * device @ 0x2000
+avg. @ 0x2000
+pdgd~symbol name="device"~volatile="true"~?
+pdgx~<op code="9"~?
+pdg~device~?
+avg uint16_t * device @ 0x2000
+avg. @ 0x2000
+pdgd~symbol name="device"~volatile="true"~?
+pdgx~<op code="9"~?
+pdg~device~?
+EOF
+EXPECT=<<EOF
+uint16_t * volatile
+1
+2
+2
+volatile uint16_t *
+0
+0
+1
+uint16_t *
+0
+0
+1
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
 NAME=volatile pointee effects survive the native action path while ordinary and volatile pointer controls optimize
 FILE=hex://0fb7070fb707c3
 ARGS=-a x86 -b 64 -e log.level=0
