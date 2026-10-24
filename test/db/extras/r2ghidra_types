@@ -1,25 +1,25 @@
-NAME=C48 mapped code data comments and annotations retain independent high fields
-FILE=hex://b8cefa8ed867a1efcdab89cbefbe
+NAME=CS-relative C48 code data comments and annotations retain wide offsets
+FILE=hex://2e67a1efcdab89cbefbe
 ARGS=-a x86 -b 16 -e log.level=0
 CMDS=<<EOF
 e r2ghidra.lang=x86:LE:16:Protected Mode
 e r2ghidra.roprop=0
 e r2ghidra.casts=true
 om-*
-om 3 0xabcd12345678 12 0 r-x
-om 3 0xface89abcdef 2 12 r--
+om 3 0xabcd12345678 8 0 r-x
+om 3 0xabcd89abcdef 2 8 r--
 s 0xabcd12345678
 af+ 0xabcd12345678 high_coordinate
-afb+ 0xabcd12345678 0xabcd12345678 12
+afb+ 0xabcd12345678 0xabcd12345678 8
 "afs uint16_t high_coordinate(void)"
 tcc ax __cdecl16far(stack)
 afc __cdecl16far
 CC high_code_comment @ 0xabcd12345678
-p8 12
+p8 8
 pdg~return
 pdgd~addr space="ram" offset="0xabcd12345678"~?
-pdgx~addr space="ram" offset="0xface89abcdef" size="2"~?
-f high_data 2 @ 0xface89abcdef
+pdgx~addr space="ram" offset="0xabcd89abcdef" size="2"~?
+f high_data 2 @ 0xabcd89abcdef
 pdg~high_coordinate
 pdg~high_code_comment
 pdg~return
@@ -37,8 +37,8 @@ afs
 afc
 EOF
 EXPECT=<<EOF
-b8cefa8ed867a1efcdab89cb
-    return *(uint16_t __r2_analysis48 *)0xface89abcdef;
+2e67a1efcdab89cb
+    return *(uint16_t __r2_analysis48 *)0xabcd89abcdef;
 2
 2
 uint16_t __cdecl16far high_coordinate(void)
@@ -49,10 +49,42 @@ high_coordinate
 188897262065272
 188897262065272
 global_variable
-275764979944943
+188899266383343
     return 0xbeef;
 uint16_t high_coordinate (void);
 __cdecl16far
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=literal DS does not acquire a C48 data identity from a mapped readonly symbol
+FILE=hex://b8cefa8ed867a1efcdab89cbefbe
+ARGS=-a x86 -b 16 -e log.level=0
+CMDS=<<EOF
+e r2ghidra.lang=x86:LE:16:Protected Mode
+e r2ghidra.roprop=3
+e r2ghidra.casts=true
+om-*
+om 3 0xabcd12345678 12 0 r-x
+om 3 0xface89abcdef 2 12 r--
+s 0xabcd12345678
+af+ 0xabcd12345678 literal_selector
+afb+ 0xabcd12345678 0xabcd12345678 12
+"afs uint16_t literal_selector(void)"
+tcc ax __cdecl16far(stack)
+afc __cdecl16far
+f high_data 2 @ 0xface89abcdef
+pdg~return
+pdgx~addr space="ram" offset="0xface89abcdef" size="2"~?
+pdgj~?global_variable
+pdg~?0xbeef
+EOF
+EXPECT=<<EOF
+    return *(uint16_t __r2_analysis48 *)segmentop(0xface,0x89abcdef);
+0
+0
+0
 EOF
 EXPECT_ERR=<<EOF
 EOF

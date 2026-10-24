@@ -20,57 +20,143 @@ void R2LoadImage::loadFill(uint1 *ptr, int4 size, const Address &addr) {
 	r_io_read_at (core->io, addr.getOffset(), ptr, size);
 }
 
-bool R2LoadImage::getInstructionField(const InstructionField &field, InstructionFieldUse use, Address &target) const {
-	RCoreLock core (coreMutex);
+static RBinFile *windowsNeFile(RCoreLock &core, AddrSpace *space, const Address &source) {
 	RBinFile *file = r_bin_cur (core->bin);
 	RBinObject *object = file ? file->bo : nullptr;
 	RBinInfo *info = object ? object->info : nullptr;
-	AddrSpace *space = addr_space_manager->getDefaultCodeSpace ();
 	if (!info || !info->rclass || strcmp (info->rclass, "ne") || !info->os || strcmp (info->os, "Windows") ||
-		space->getAddrSize () != 6 || field.source.getSpace () != space || field.size <= 0 || !object->relocs) {
-		return false;
+		space->getAddrSize () != 6 || source.getSpace () != space || !object->relocs) {
+		return nullptr;
 	}
+	return file;
+}
 
-	const ut64 source = field.source.getOffset ();
-	const ut64 end = source + field.size;
+static RBinReloc *firstNeReloc(RBinObject *object, ut64 source, int size) {
+	const ut64 end = source + size;
 	// Windows NE fields are at most four bytes; include a pointer starting before this token.
 	const ut64 begin = source > 3 ? source - 3 : 0;
 	if (end - begin > std::numeric_limits<int>::max ()) {
 		throw LowlevelError ("Unrepresentable Windows NE instruction field span");
 	}
-	RBinReloc *reloc = r_bin_reloc_at (object->relocs, begin, end - begin);
-	const RBinReloc *limit = R_VEC_END_ITER (object->relocs);
+	return r_bin_reloc_at (object->relocs, begin, end - begin);
+}
+
+static bool exactNeMachineField(const RBinReloc &reloc, ut64 source, int size) {
+	const unsigned type = reloc.ntype & 7;
+	if (type != 2 && type != 3 && !reloc.import) {
+		return false;
+	}
+	const int width = reloc.type / 8;
+	const bool expectedWidth = (type == 0 && width == 1) || ((type == 2 || type == 5) && width == 2) || (type == 3 && width == 4);
+	const bool whole = source == reloc.vaddr && size == width;
+	const bool component = type == 3 && size == 2 && (source == reloc.vaddr || source == reloc.vaddr + 2);
+	return expectedWidth && (whole || component);
+}
+
+bool R2LoadImage::getInstructionField(const InstructionField &field) const {
+	RCoreLock core (coreMutex);
+	RBinFile *file = windowsNeFile (core, addr_space_manager->getDefaultCodeSpace (), field.source);
+	if (!file || field.size <= 0) {
+		return false;
+	}
+	const ut64 source = field.source.getOffset ();
+	const ut64 end = source + field.size;
+	RBinReloc *reloc = firstNeReloc (file->bo, source, field.size);
+	const RBinReloc *limit = R_VEC_END_ITER (file->bo->relocs);
 	for (; reloc && reloc < limit && reloc->vaddr < end; ++reloc) {
 		const unsigned type = reloc->ntype & 7;
-		const bool pointer = type == 3;
-		const bool selector = type == 2;
-		if (!pointer && !selector && !reloc->import) {
+		if (type != 2 && type != 3 && !reloc->import) {
 			continue;
 		}
 		const int width = reloc->type / 8;
-		const ut64 unknown = reloc->vaddr + (pointer && !reloc->import ? 2 : 0);
 		const ut64 relocEnd = reloc->vaddr + width;
-		if (source >= relocEnd || end <= unknown) {
+		if (source >= relocEnd || end <= reloc->vaddr) {
 			continue;
 		}
-		const bool whole = source == reloc->vaddr && field.size == width;
-		const bool component = pointer && field.size == 2 && (source == reloc->vaddr + 2 || (reloc->import && source == reloc->vaddr));
-		const bool expectedWidth = (type == 0 && width == 1) || ((selector || type == 5) && width == 2) || (pointer && width == 4);
-		if (!expectedWidth || (!whole && !component) || field.bigEndian || field.bitOffset != 0 || field.bitSize != field.size * 8) {
+		if (!exactNeMachineField (*reloc, source, field.size) || field.bigEndian || field.bitOffset != 0 || field.bitSize != field.size * 8) {
 			throw LowlevelError ("Unrepresentable Windows NE relocated instruction field");
 		}
-		if (use == machine_value) {
-			return true;
-		}
-		if (pointer && whole && !reloc->additive) {
-			const ut64 address = reloc->import ? reloc->laddr : reloc->addend;
-			if (address == UT64_MAX || address > space->getHighest ()) {
-				throw LowlevelError ("Unrepresentable Windows NE relocated code target");
-			}
-			target = Address (space, address);
-			return true;
-		}
+		return true;
+	}
+	return false;
+}
+
+static bool declaredReadonlyNeSource(RBinFile *file, const RBinReloc &reloc, int size) {
+	if (!file->buf || reloc.paddr < file->bo->loadaddr) {
 		return false;
+	}
+	const ut64 offset = reloc.paddr - file->bo->loadaddr;
+	const ut64 fileSize = r_buf_size (file->buf);
+	if (offset > fileSize || (ut64)size > fileSize - offset) {
+		return false;
+	}
+	RVecRBinSection *sections = r_bin_file_get_sections_vec (file);
+	RBinSection *section;
+	R_VEC_FOREACH (sections, section) {
+		if (!section->is_segment || (section->perm & R_PERM_W) || reloc.vaddr < section->vaddr || reloc.paddr < section->paddr) {
+			continue;
+		}
+		const ut64 displacement = reloc.vaddr - section->vaddr;
+		if (displacement == reloc.paddr - section->paddr && displacement <= section->size && (ut64)size <= section->size - displacement) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool R2LoadImage::isCallPreservedStorage(const Address &storage, int4 size) const {
+	RCoreLock core (coreMutex);
+	RBinFile *file = windowsNeFile (core, addr_space_manager->getDefaultCodeSpace (), storage);
+	if (!file || size <= 0 || size > 4) {
+		return false;
+	}
+	const ut64 source = storage.getOffset ();
+	RBinReloc *reloc = firstNeReloc (file->bo, source, size);
+	const RBinReloc *limit = R_VEC_END_ITER (file->bo->relocs);
+	for (; reloc && reloc < limit && reloc->vaddr < source + size; ++reloc) {
+		if (exactNeMachineField (*reloc, source, size) && declaredReadonlyNeSource (file, *reloc, reloc->type / 8)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool R2LoadImage::getInitialReference(const Address &storage, int4 size, InitialReferenceUse use, Address &target) const {
+	RCoreLock core (coreMutex);
+	AddrSpace *space = addr_space_manager->getDefaultCodeSpace ();
+	RBinFile *file = windowsNeFile (core, space, storage);
+	if (!file || (use == selector_reference ? size != 2 : size != 4)) {
+		return false;
+	}
+	const ut64 source = storage.getOffset ();
+	RBinReloc *reloc = firstNeReloc (file->bo, source, size);
+	const RBinReloc *limit = R_VEC_END_ITER (file->bo->relocs);
+	for (; reloc && reloc < limit && reloc->vaddr < source + size; ++reloc) {
+		if (reloc->additive) {
+			continue;
+		}
+		const unsigned type = reloc->ntype & 7;
+		const int width = reloc->type / 8;
+		if (use == selector_reference) {
+			if (reloc->import || !((type == 2 && width == 2 && source == reloc->vaddr) || (type == 3 && width == 4 && source == reloc->vaddr + 2))) {
+				continue;
+			}
+		} else if (type != 3 || width != 4 || source != reloc->vaddr) {
+			continue;
+		}
+		// Declared non-writable storage admits an initial analysis fact, not runtime byte immutability.
+		if (!declaredReadonlyNeSource (file, *reloc, width)) {
+			continue;
+		}
+		ut64 address = reloc->import ? reloc->laddr : reloc->addend;
+		if (address == UT64_MAX || address > space->getHighest ()) {
+			throw LowlevelError ("Unrepresentable Windows NE initial reference target");
+		}
+		if (use == selector_reference) {
+			address &= ~(ut64)UT32_MAX;
+		}
+		target = Address (space, address);
+		return true;
 	}
 	return false;
 }

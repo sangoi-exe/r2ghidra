@@ -34,13 +34,13 @@ af+ 0 far_call
 afb+ 0 0 6
 pd:g~func_
 e r2ghidra.lang=x86:LE:16:Protected Mode
-pd:g~func_
+pd:g~?func_
 pd:gss
 EOF
 EXPECT=<<EOF
 x86:LE:16:Real Mode:
     func_0x00000020();
-    func_0x00020000();
+0
 x86:LE:16:Real Mode:
 EOF
 RUN

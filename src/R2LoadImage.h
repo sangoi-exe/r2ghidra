@@ -25,7 +25,9 @@ public:
 	explicit R2LoadImage(RCoreMutex *coreMutex, AddrSpaceManager *addr_space_manager);
 
 	void loadFill(uint1 *ptr, int4 size, const Address &addr) override;
-	bool getInstructionField(const InstructionField &field, InstructionFieldUse use, Address &target) const override;
+	bool getInstructionField(const InstructionField &field) const override;
+	bool getInitialReference(const Address &storage, int4 size, InitialReferenceUse use, Address &target) const override;
+	bool isCallPreservedStorage(const Address &storage, int4 size) const override;
 	string getArchType() const override;
 	void adjustVma(long adjust) override;
 	void getReadonly(RangeList &list) const override;
