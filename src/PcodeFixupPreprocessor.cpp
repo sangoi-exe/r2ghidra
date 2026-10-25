@@ -571,6 +571,9 @@ static FuncProto *build_locked_proto(R2Architecture &arch, const char *cc, const
 
 static void override_format_call(RCore *core, R2Architecture &arch, Funcdata *ghFunc, Sdb *tdb,
 		const std::unordered_map<std::string, ut64> &reg_strings, RAnalOp *op, AddrSpace *space) {
+	if (r_anal_call_type_at (core->anal, op->addr)) {
+		return;
+	}
 	const std::string callee = resolve_callee_name (core, op->jump);
 	if (callee.empty () || !is_format_callee (core, callee.c_str ())) {
 		return;

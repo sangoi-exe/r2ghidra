@@ -100,6 +100,33 @@ EXPECT_ERR=<<EOF
 EOF
 RUN
 
+NAME=exact call-site sentinel takes priority over optional format recovery
+FILE=bins/elf/x86_64-varargs.so
+ARGS=-e bin.relocs.apply=true -e log.level=0
+CMDS=<<EOF
+e types.plugin=c2
+aaa
+e r2ghidra.varargs=true
+pdg @ sym.p_printf~sym.imp.printf
+td unsigned long long exact_printf(const char *fmt, unsigned long long value);
+tk calllink.00001174=exact_printf
+e r2ghidra.varargs=false
+pdg @ sym.p_printf~sym.imp.printf
+e r2ghidra.varargs=true
+pdg @ sym.p_printf~sym.imp.printf
+tk func.exact_printf.prototype=unknown
+pdgj @ sym.p_printf
+EOF
+EXPECT=<<EOF
+    sym.imp.printf("%s %d %f %x\n",arg1,arg2,in_XMM0_Qa,arg3);
+    sym.imp.printf("%s %d %f %x\n",arg1);
+    sym.imp.printf("%s %d %f %x\n",arg1);
+{"errors":["Ghidra Decompiler Error: Unavailable parameter-list knowledge for function type exact_printf"]}
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
 NAME=literal DS does not acquire a C48 data identity from a mapped readonly symbol
 FILE=hex://b8cefa8ed867a1efcdab89cbefbe
 ARGS=-a x86 -b 16 -e log.level=0
