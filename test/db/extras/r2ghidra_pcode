@@ -665,3 +665,105 @@ EOF
 EXPECT_ERR=<<EOF
 EOF
 RUN
+
+NAME=incomplete call exports known storage without a source parameter position
+FILE=hex://5589e583e4f083ec10892c2490909090c744240407000000e8230000008b6c240089ec5dc30000000000000000000000000000000000000000000000000000008b44240883c003c3
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+af+ 0x1000 saved_frame_caller
+afb+ 0x1000 0x1000 37
+af+ 0x1040 stack_argument_consumer
+afb+ 0x1040 0x1040 8
+e r2ghidra.lang=x86:LE:32:default:gcc
+s 0x1040
+afij~{[0].prototype}
+s 0x1000
+tk func.*~?
+tk calllink.*~?
+e r2ghidra.deadcode=false
+pdg~__call_incomplete
+pdgj~__call_incomplete~?
+pdgx~call_input_storage source_mapping="incomplete"~?
+pdgx~input operand="1" varref=~?
+pdgx~space="stack" offset="0x8" size="4"~unresolved~?
+pdgx~space="stack" offset="0x4" size="4"~call_input_storage~?
+e r2ghidra.deadcode=true
+pdg~__call_incomplete
+pdgj~__call_incomplete~?
+pdgx~call_input_storage source_mapping="incomplete"~?
+pdgx~space="stack" offset="0x8" size="4"~unresolved~?
+pdgx~space="stack" offset="0x4" size="4"~call_input_storage~?
+s 0x1040
+afij~{[0].prototype}
+s 0x1000
+tk func.*~?
+tk calllink.*~?
+EOF
+EXPECT=<<EOF
+unknown
+0
+0
+    __call_incomplete(stack_argument_consumer,__input_storage("stack",0x8,4,7));
+1
+1
+1
+1
+1
+    __call_incomplete(stack_argument_consumer,__input_storage("stack",0x8,4,7));
+1
+1
+1
+1
+unknown
+0
+0
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=missing callee evidence and supplied positions do not export incomplete storage
+FILE=hex://5589e583e4f083ec10892c2490909090c744240407000000e8230000008b6c240089ec5dc30000000000000000000000000000000000000000000000000000008b44240883c003c3
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+af+ 0x1000 saved_frame_caller
+afb+ 0x1000 0x1000 37
+e r2ghidra.lang=x86:LE:32:default:gcc
+e r2ghidra.deadcode=false
+pdg~func_0x00001040()
+pdg~Incomplete
+pdgx~call_input_storage~?
+af+ 0x1040 stack_argument_consumer
+pdg~stack_argument_consumer()
+pdgx~call_input_storage~?
+afb+ 0x1040 0x1040 8
+"td unsigned int audited_hole(unsigned int first, unsigned int second);"
+tk calllink.00001018=audited_hole
+pdg~stack_argument_consumer(
+pdgj~__call_incomplete~?
+pdgx~call_input_storage~?
+e r2ghidra.deadcode=true
+pdg~stack_argument_consumer(
+pdgj~__call_incomplete~?
+pdgx~call_input_storage~?
+tk calllink.00001018
+tk func.audited_hole.prototype
+EOF
+EXPECT=<<EOF
+    func_0x00001040();
+    //WARNING: Incomplete call input recovery: unresolved call-relative storage stack[0x4:4]
+0
+    stack_argument_consumer();
+0
+    stack_argument_consumer(&stack0xfffffffc,7);
+0
+0
+    uVar1 = stack_argument_consumer(&stack0xfffffffc,7);
+0
+0
+audited_hole
+fixed
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN

@@ -294,6 +294,36 @@ static void PrintEliminatedXML(std::ostream &stream, const PcodeSnapshot &snapsh
 	stream << "</eliminated_ops>";
 }
 
+static void PrintCallInputStorageXML(std::ostream &stream, const Funcdata &func) {
+	for (int4 i = 0; i < func.numCalls (); i++) {
+		const FuncCallSpecs *call = func.getCallSpecs (i);
+		const PcodeOp *op = call->getOp ();
+		if (op->isDead () || !call->hasStorageInputs ()) {
+			continue;
+		}
+		stream << "<call_input_storage";
+		a_v (stream, "source_mapping", "incomplete");
+		stream << ">";
+		XmlEncode encoder (stream);
+		op->getSeqNum ().encode (encoder);
+		for (int4 slot = 1; slot < op->numInput (); slot++) {
+			const VarnodeData *storage = call->getInputStorage (slot);
+			stream << "<input";
+			a_v_i (stream, "operand", slot);
+			a_v_u (stream, "varref", op->getIn (slot)->getCreateIndex ());
+			stream << ">";
+			storage->getAddr ().encode (encoder, storage->size);
+			stream << "</input>";
+		}
+		for (const VarnodeData &storage : call->getUnresolvedInputStorages ()) {
+			stream << "<unresolved>";
+			storage.getAddr ().encode (encoder, storage.size);
+			stream << "</unresolved>";
+		}
+		stream << "</call_input_storage>";
+	}
+}
+
 static void PrintCodeJSON(const Funcdata &func, RCodeMeta *code, std::ostream &stream, const PcodeSnapshot *snapshot) {
 	PJ *pj = pj_new ();
 	if (!pj) {
@@ -473,6 +503,7 @@ static void Decompile(RCore *core, ut64 addr, DecompileMode mode, std::stringstr
 			func->encode(enc, 0, true, true);
 		}
 		out_stream << "</function>";
+		PrintCallInputStorageXML (out_stream, *func);
 		if (capture) {
 			PrintEliminatedXML (out_stream, *capture);
 		}
