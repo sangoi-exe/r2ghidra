@@ -527,3 +527,141 @@ EOF
 EXPECT_ERR=<<EOF
 EOF
 RUN
+
+NAME=direct fixed parameters retain separate call-relative stack reads
+FILE=hex://5589e583e4f083ec10f30f7e0580100000660fd60424e82500000089ec5dc30000000000000000000000000000000000000000000000000000000000000000008b4424046bc06403442408c3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000007000000
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+af+ 0x1000 packed_caller
+afb+ 0x1000 0x1000 31
+af+ 0x1040 packed_target
+afb+ 0x1040 0x1040 12
+e r2ghidra.lang=x86:LE:32:default:gcc
+"td unsigned int packed_target(unsigned int first, unsigned int second, ...);"
+tk func.packed_target
+tk func.packed_target.arg.0
+tk func.packed_target.arg.1
+tk func.packed_target.arg.2
+tk func.packed_target.prototype
+e r2ghidra.deadcode=false
+pdg~packed_target(
+pdg~packed_target(
+pdgj~packed_target(*(uVar1 - 0x10),*(uVar1 - 0xc))~?
+pdg~Incomplete~?
+pdgj~Incomplete~?
+pdgx~packed_target~?
+pdgx~Incomplete~?
+e r2ghidra.deadcode=true
+pdg~packed_target(
+pdg~packed_target(
+pdgj~packed_target(*(puVar4 + -0x10),*(puVar4 + -0xc))~?
+pdg~Incomplete~?
+pdgj~Incomplete~?
+pdgx~packed_target~?
+pdgx~Incomplete~?
+tk func.packed_target
+tk func.packed_target.arg.0
+tk func.packed_target.arg.1
+tk func.packed_target.arg.2
+tk func.packed_target.prototype
+tk calllink.*~?
+EOF
+EXPECT=<<EOF
+first,second,...
+unsigned int,first
+unsigned int,second
+,...
+fixed
+    packed_target(*(uVar1 - 0x10),*(uVar1 - 0xc));
+    packed_target(*(uVar1 - 0x10),*(uVar1 - 0xc));
+1
+0
+0
+1
+0
+    uVar2 = packed_target(*(puVar4 + -0x10),*(puVar4 + -0xc));
+    uVar2 = packed_target(*(puVar4 + -0x10),*(puVar4 + -0xc));
+1
+0
+0
+1
+0
+first,second,...
+unsigned int,first
+unsigned int,second
+,...
+fixed
+0
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=late indirect fixed parameters preserve distinct packed source bytes
+FILE=hex://5589e583e4f083ec10f30f7e0580100000660fd60424b840100000ffd089ec5dc3000000000000000000000000000000000000000000000000000000000000008b4424046bc06403442408c3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000007000000
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+af+ 0x1000 packed_caller
+afb+ 0x1000 0x1000 33
+af+ 0x1040 packed_target
+afb+ 0x1040 0x1040 12
+e r2ghidra.lang=x86:LE:32:default:gcc
+"td unsigned int packed_target(unsigned int first, unsigned int second, ...);"
+tk func.packed_target
+tk func.packed_target.arg.0
+tk func.packed_target.arg.1
+tk func.packed_target.arg.2
+tk func.packed_target.prototype
+e r2ghidra.deadcode=false
+pdg~packed_target(
+pdg~packed_target(
+pdgj~0x20~?
+pdg~Incomplete~?
+pdgj~Incomplete~?
+pdgx~packed_target~?
+pdgx~Incomplete~?
+e r2ghidra.deadcode=true
+pdg~packed_target(
+pdg~packed_target(
+pdgj~packed_target(*(puVar5 + -0x10),*(puVar5 + -0xc))~?
+pdg~Incomplete~?
+pdgj~Incomplete~?
+pdgx~packed_target~?
+pdgx~Incomplete~?
+tk func.packed_target
+tk func.packed_target.arg.0
+tk func.packed_target.arg.1
+tk func.packed_target.arg.2
+tk func.packed_target.prototype
+tk calllink.*~?
+EOF
+EXPECT=<<EOF
+first,second,...
+unsigned int,first
+unsigned int,second
+,...
+fixed
+    packed_target(Var1,Var1 >> 0x20);
+    packed_target(Var1,Var1 >> 0x20);
+1
+0
+0
+1
+0
+    uVar3 = packed_target(*(puVar5 + -0x10),*(puVar5 + -0xc));
+    uVar3 = packed_target(*(puVar5 + -0x10),*(puVar5 + -0xc));
+1
+0
+0
+3
+0
+first,second,...
+unsigned int,first
+unsigned int,second
+,...
+fixed
+0
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
