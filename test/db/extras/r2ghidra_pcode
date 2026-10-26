@@ -397,3 +397,133 @@ EXPECT=<<EOF
 1
 EOF
 RUN
+
+NAME=mixed variadic direct call preserves declared prefix and existing register tail
+FILE=hex://554889e54883ec10bf0b000000be2100000048b8000000000000f43f66480f6ec0b801000000e815000000c9c3000000000000000000000000000000000000006bc764f20f2cd06bd20a01d001f0c3
+ARGS=-a x86 -b 64 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+af+ 0x1000 mixed_caller
+afb+ 0x1000 0x1000 45
+af+ 0x1040 mixed_target
+afb+ 0x1040 0x1040 15
+e r2ghidra.lang=x86:LE:64:default:gcc
+"td int mixed_target(int tag, double amount, ...);"
+tk func.mixed_target
+tk func.mixed_target.arg.0
+tk func.mixed_target.arg.1
+tk func.mixed_target.arg.2
+tk func.mixed_target.prototype
+e r2ghidra.deadcode=false
+pdg~mixed_target(
+pdg~Incomplete~?
+pdgj~mixed_target(0xb,1.25,0x21)~?
+pdgj~Incomplete~?
+pdgx~1.25~?
+pdgx~Incomplete~?
+e r2ghidra.deadcode=true
+pdg~mixed_target(
+pdg~Incomplete~?
+pdgj~mixed_target(0xb,1.25,0x21)~?
+pdgj~Incomplete~?
+pdgx~1.25~?
+pdgx~Incomplete~?
+tk func.mixed_target
+tk func.mixed_target.arg.0
+tk func.mixed_target.arg.1
+tk func.mixed_target.arg.2
+tk func.mixed_target.prototype
+tk calllink.*~?
+EOF
+EXPECT=<<EOF
+tag,amount,...
+int,tag
+double,amount
+,...
+fixed
+    mixed_target(0xb,1.25,0x21);
+0
+1
+0
+1
+0
+    iVar1 = mixed_target(0xb,1.25,0x21);
+0
+1
+0
+1
+0
+tag,amount,...
+int,tag
+double,amount
+,...
+fixed
+0
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=late indirect mixed variadic call preserves declared prefix and existing register tail
+FILE=hex://554889e54883ec10bf0b000000be2100000048b8000000000000f43f66480f6ec0b80100000041bb4010000041ffd3c9c30000000000000000000000000000006bc764f20f2cd06bd20a01d001f0c3
+ARGS=-a x86 -b 64 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+af+ 0x1000 mixed_caller
+afb+ 0x1000 0x1000 49
+af+ 0x1040 mixed_target
+afb+ 0x1040 0x1040 15
+e r2ghidra.lang=x86:LE:64:default:gcc
+"td int mixed_target(int tag, double amount, ...);"
+tk func.mixed_target
+tk func.mixed_target.arg.0
+tk func.mixed_target.arg.1
+tk func.mixed_target.arg.2
+tk func.mixed_target.prototype
+e r2ghidra.deadcode=false
+pdg~mixed_target(
+pdg~Incomplete~?
+pdgj~mixed_target(0xb,1.25,0x21)~?
+pdgj~Incomplete~?
+pdgx~1.25~?
+pdgx~Incomplete~?
+e r2ghidra.deadcode=true
+pdg~mixed_target(
+pdg~Incomplete~?
+pdgj~mixed_target(0xb,1.25,0x21)~?
+pdgj~Incomplete~?
+pdgx~1.25~?
+pdgx~Incomplete~?
+tk func.mixed_target
+tk func.mixed_target.arg.0
+tk func.mixed_target.arg.1
+tk func.mixed_target.arg.2
+tk func.mixed_target.prototype
+tk calllink.*~?
+EOF
+EXPECT=<<EOF
+tag,amount,...
+int,tag
+double,amount
+,...
+fixed
+    mixed_target(0xb,1.25,0x21);
+0
+1
+0
+1
+0
+    iVar2 = mixed_target(0xb,1.25,0x21);
+0
+1
+0
+1
+0
+tag,amount,...
+int,tag
+double,amount
+,...
+fixed
+0
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
