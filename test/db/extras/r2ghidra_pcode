@@ -28,13 +28,13 @@ EXPECT=<<EOF
 EOF
 RUN
 
-NAME=NE automatic Protected Mode context yields to explicit Real Mode override
+NAME=NE automatic Protected Mode succeeds and incompatible Real Mode refuses C48
 FILE=bins/ne/anim8.exe
 ARGS=-e bin.relocs.apply=true
 CMDS=<<EOF
-af+ 0x10000 startup
-afb+ 0x10000 0x10000 5
-s 0x10000
+af+ 0x100000000 startup
+afb+ 0x100000000 0x100000000 5
+s 0x100000000
 pd:gd~protectedMode
 e r2ghidra.lang=x86:LE:16:Real Mode
 pd:gd~protectedMode
@@ -43,9 +43,11 @@ EOF
 EXPECT=<<EOF
       <set name="protectedMode" val="0x1"/>
       <set name="protectedMode" val="0x0"/>
-      <set name="protectedMode" val="0x0"/>
-      <set name="protectedMode" val="0x0"/>
+WARNING: Throwing out symbol with invalid mapping: startup
 x86:LE:16:Protected Mode:
+EOF
+EXPECT_ERR=<<EOF
+WARN: Ghidra Decompiler Error: No function in Scope
 EOF
 RUN
 
@@ -229,7 +231,7 @@ e r2ghidra.lang=x86:LE:16:Protected Mode
 "td typedef unsigned short WORD;"
 "td struct FarAddress16 { WORD offset; WORD selector; };"
 tk struct.FarAddress16.selector=WORD,2,0
-"afs void qualified_borland_fmovmem(FarAddress16 source, FarAddress16 destination, WORD byte_count)"
+"afs void qualified_borland_fmovmem(struct FarAddress16 source, struct FarAddress16 destination, WORD byte_count)"
 tcc ax borland_fmovmem_16far(stack)
 afc borland_fmovmem_16far
 pdgx~addr space="stack" offset="0x4" size="4"~input="true"~?
@@ -248,5 +250,69 @@ EXPECT=<<EOF
         puVar4 = segmentop(destination.selector,puVar8);
         puVar2 = segmentop(source.selector,puVar7);
         *segmentop(destination.selector,puVar8 + iVar5) = *segmentop(source.selector,puVar7 + iVar5);
+EOF
+RUN
+
+NAME=unlocked callee use recovers reused call input before retained-code rendering
+FILE=hex://5589e583e4f083ec10c7042407000000e82b00000003042489ec5dc30000000000000000000000000000000000000000000000000000000000000000000000008b44240483c003c3
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+af+ 0x1000 reused_argument_caller
+afb+ 0x1000 0x1000 28
+af+ 0x1040 stack_argument_consumer
+afb+ 0x1040 0x1040 8
+e r2ghidra.lang=x86:LE:32:default:gcc
+s 0x1040
+afij~{[0].prototype}
+s 0x1000
+pdg~stack_argument_consumer(7)
+pdg~return
+pdg~Incomplete~?
+pdgj~Incomplete~?
+pdgx~Incomplete~?
+e r2ghidra.deadcode=true
+pdg~stack_argument_consumer(7)
+pdgj~Incomplete~?
+pdgj~eliminated_ops~?
+pdgx~Incomplete~?
+s 0x1040
+afij~{[0].prototype}
+s 0x1000
+EOF
+EXPECT=<<EOF
+unknown
+    iVar1 = stack_argument_consumer(7);
+    return iVar1 + *(uVar2 - 0x10);
+0
+0
+0
+    uVar2 = stack_argument_consumer(7);
+0
+1
+0
+unknown
+EOF
+RUN
+
+NAME=unavailable callee evidence remains explicit in C JSON and XML code
+FILE=hex://5589e583e4f083ec10c7042407000000e82b00000003042489ec5dc30000000000000000000000000000000000000000000000000000000000000000000000008b44240483c003c3
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+af+ 0x1000 reused_argument_caller
+afb+ 0x1000 0x1000 28
+e r2ghidra.lang=x86:LE:32:default:gcc
+pdg~Incomplete
+pdgj~Incomplete~?
+pdgx~Incomplete~?
+pdgx~call-relative~?
+af+ 0x1040 stack_argument_consumer
+pdg~Incomplete~?
+EOF
+EXPECT=<<EOF
+    //WARNING: Incomplete call input recovery: unresolved call-relative storage stack[0x4:4]
+1
+1
+1
+1
 EOF
 RUN

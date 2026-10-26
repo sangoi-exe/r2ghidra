@@ -28,6 +28,7 @@
 #include <vector>
 #include <map>
 #include <mutex>
+#include <set>
 
 #undef DEBUG_EXCEPTIONS
 
@@ -331,6 +332,23 @@ static void PrintCodeJSON(const Funcdata &func, RCodeMeta *code, std::ostream &s
 	pj_free (pj);
 }
 
+static void PrepareFunction(R2Architecture &arch, RAnalFunction *function, Funcdata *func) {
+	RCoreLock core (arch.getCore ());
+	seedGlobalPointerRegister (arch, core, function);
+	if (cfg_var_fixups.GetBool (core->config)) {
+		PcodeFixupPreprocessor::fixupSharedReturnJumpToRelocs(function, func, core, arch);
+	}
+	PcodeFixupPreprocessor::fixupCallsBeforeData(function, func, core, arch);
+	PcodeFixupPreprocessor::fixupResolvedIndirectCalls(function, func, core, arch);
+	if (cfg_var_ccode.GetBool (core->config)) {
+		PcodeFixupPreprocessor::fixupImportCallDeindirection(function, func, core, arch);
+	}
+	PcodeFixupPreprocessor::fixupCallSitePrototypes(function, func, core, arch);
+	if (cfg_var_varargs.GetBool (core->config)) {
+		PcodeFixupPreprocessor::fixupVariadicFormatCalls(function, func, core, arch);
+	}
+}
+
 static void Decompile(RCore *core, ut64 addr, DecompileMode mode, std::stringstream &out_stream, RCodeMeta **out_code, Harvest *out_harvest = nullptr) {
 	RAnalFunction *function = r_anal_get_fcn_in (core->anal, addr, R_ANAL_FCN_TYPE_NULL);
 	if (!function) {
@@ -365,12 +383,8 @@ static void Decompile(RCore *core, ut64 addr, DecompileMode mode, std::stringstr
 	if (func == nullptr) {
 		throw LowlevelError ("No function in Scope");
 	}
-	seedGlobalPointerRegister (arch, core, function);
 	const bool showDeadcode = cfg_var_deadcode.GetBool (core->config);
 	const bool exportDeadcode = showDeadcode && (mode == DecompileMode::JSON || mode == DecompileMode::XML);
-	if (showDeadcode && !exportDeadcode) {
-		arch.allacts.toggleAction (arch.allacts.getCurrentName (), "deadcode", false);
-	}
 	arch.getCore()->sleepBegin ();
 	auto action = arch.allacts.getCurrent ();
 
@@ -380,22 +394,43 @@ static void Decompile(RCore *core, ut64 addr, DecompileMode mode, std::stringstr
 #ifndef DEBUG_EXCEPTIONS
 	try {
 #endif
-		if (cfg_var_fixups.GetBool (core->config)) {
-			PcodeFixupPreprocessor::fixupSharedReturnJumpToRelocs(function, func, core, arch);
-		}
-		PcodeFixupPreprocessor::fixupCallsBeforeData(function, func, core, arch);
-		PcodeFixupPreprocessor::fixupResolvedIndirectCalls(function, func, core, arch);
-		if (cfg_var_ccode.GetBool (core->config)) {
-			PcodeFixupPreprocessor::fixupImportCallDeindirection(function, func, core, arch);
-		}
-		PcodeFixupPreprocessor::fixupCallSitePrototypes(function, func, core, arch);
-		if (cfg_var_varargs.GetBool (core->config)) {
-			PcodeFixupPreprocessor::fixupVariadicFormatCalls(function, func, core, arch);
-		}
-
+		PrepareFunction (arch, function, func);
 		res = PerformWithSnapshot (*action, *func, capture);
-		if (capture && res >= 0) {
-			// Save normal elimination results before rendering the version that preserves unused code.
+		if (res >= 0) {
+			std::vector<Funcdata *> callees;
+			std::set<Funcdata *> seen;
+			for (int4 i = 0; i < func->numCalls (); i++) {
+				FuncCallSpecs *call = func->getCallSpecs (i);
+				Funcdata *callee = call->getFuncdata ();
+				if (call->getUnresolvedInputStorages ().empty () || call->getOp ()->code () != CPUI_CALL
+						|| !callee || callee == func || !seen.insert (callee).second) {
+					continue;
+				}
+				callees.push_back (callee);
+			}
+			bool processedCallee = false;
+			for (Funcdata *callee : callees) {
+				{
+					RCoreLock lockedCore (arch.getCore ());
+					RAnalFunction *calleeFunction = r_anal_get_function_at (lockedCore->anal, callee->getAddress ().getOffset ());
+					if (!calleeFunction || r_list_empty (calleeFunction->bbs)) {
+						continue;
+					}
+					PrepareFunction (arch, calleeFunction, callee);
+				}
+				if (PerformWithSnapshot (*action, *callee, nullptr) < 0 || !callee->isProcComplete ()) {
+					throw LowlevelError ("Callee input analysis did not complete");
+				}
+				processedCallee = true;
+			}
+			if (processedCallee) {
+				// Symbol-backed prototype copies can share the callee's recovered parameter scope.
+				arch.clearAnalysis (func);
+				res = PerformWithSnapshot (*action, *func, capture);
+			}
+		}
+		if (showDeadcode && res >= 0) {
+			// Retain the final normal-analysis snapshot, not operations from the first caller pass.
 			arch.clearAnalysis (func);
 			action = arch.allacts.toggleAction (arch.allacts.getCurrentName (), "deadcode", false);
 			res = PerformWithSnapshot (*action, *func, nullptr);
