@@ -316,3 +316,84 @@ EXPECT=<<EOF
 1
 EOF
 RUN
+
+NAME=variadic call prefix keeps proven reused tail through retained-code reanalysis
+FILE=hex://5589e583e4f083ec10c7042401000000c744240407000000e8230000000344240489ec5dc30000000000000000000000000000000000000000000000000000008b44240883c003c3
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+af+ 0x1000 variadic_argument_caller
+afb+ 0x1000 0x1000 37
+af+ 0x1040 stack_argument_consumer
+afb+ 0x1040 0x1040 8
+e r2ghidra.lang=x86:LE:32:default:gcc
+"td unsigned int audited_varargs(unsigned int first, ...);"
+tk calllink.00001018=audited_varargs
+s 0x1040
+afij~{[0].prototype}
+s 0x1000
+pdg~stack_argument_consumer(1,7)
+pdg~Incomplete~?
+pdgj~Incomplete~?
+pdgx~Incomplete~?
+e r2ghidra.deadcode=true
+pdg~stack_argument_consumer(1,7)
+pdgj~Incomplete~?
+pdgx~Incomplete~?
+s 0x1040
+afij~{[0].prototype}
+s 0x1000
+tk calllink.00001018
+EOF
+EXPECT=<<EOF
+unknown
+    uVar1 = stack_argument_consumer(1,7);
+0
+0
+0
+    uVar3 = stack_argument_consumer(1,7);
+0
+0
+unknown
+audited_varargs
+EOF
+RUN
+
+NAME=variadic call prefix discloses missing and bodyless tail evidence after reanalysis
+FILE=hex://5589e583e4f083ec10c7042401000000c744240407000000e8230000000344240489ec5dc30000000000000000000000000000000000000000000000000000008b44240883c003c3
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+af+ 0x1000 variadic_argument_caller
+afb+ 0x1000 0x1000 37
+e r2ghidra.lang=x86:LE:32:default:gcc
+"td unsigned int audited_varargs(unsigned int first, ...);"
+tk calllink.00001018=audited_varargs
+pdg~func_0x00001040(1)
+pdg~Incomplete
+pdgj~Incomplete~?
+pdgx~Incomplete~?
+pdgx~call-relative~?
+e r2ghidra.deadcode=true
+pdg~Incomplete
+pdgj~Incomplete~?
+pdgx~Incomplete~?
+af+ 0x1040 stack_argument_consumer
+pdg~stack_argument_consumer(1)
+pdg~Incomplete
+pdgj~Incomplete~?
+pdgx~Incomplete~?
+EOF
+EXPECT=<<EOF
+    uVar1 = func_0x00001040(1);
+    //WARNING: Incomplete call input recovery: unresolved call-relative storage stack[0x8:4]
+1
+1
+1
+    //WARNING: Incomplete call input recovery: unresolved call-relative storage stack[0x8:4]
+1
+1
+    uVar3 = stack_argument_consumer(1);
+    //WARNING: Incomplete call input recovery: unresolved call-relative storage stack[0x8:4]
+1
+1
+EOF
+RUN
