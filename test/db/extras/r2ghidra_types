@@ -734,7 +734,7 @@ NAME=function variable annotations
 FILE=bins/dectest64
 EXPECT=<<EOF
 {
-  "code": "\nint main(int argc,char **argv)\n\n{\n    int64_t in_FS_OFFSET;\n    int64_t var_30h;\n    int32_t var_24h;\n    int64_t var_20h;\n    int64_t var_8h;\n    \n    var_8h = *(in_FS_OFFSET + 0x28);\n    sym.Aeropause(&var_20h,argc,argv);\n    if (var_8h != *(in_FS_OFFSET + 0x28)) {\n    //WARNING: Subroutine does not return\n        sym.imp.__stack_chk_fail();\n    }\n    return 0;\n}\n\n",
+  "code": "\nint main(int argc,char **argv)\n\n{\n    int64_t in_FS_OFFSET;\n    int64_t var_30h;\n    int32_t var_24h;\n    int64_t var_20h;\n    int64_t var_8h;\n    \n    var_8h = *(in_FS_OFFSET + 0x28);\n    //WARNING: Incomplete call input recovery: unresolved call-relative storage register[0x8:8], stack[0x8:8]\n    sym.Aeropause(&var_20h,argc,argv);\n    if (var_8h != *(in_FS_OFFSET + 0x28)) {\n    //WARNING: Subroutine does not return\n        sym.imp.__stack_chk_fail();\n    }\n    return 0;\n}\n\n",
   "annotations": [
     {
       "start": 1,
@@ -943,243 +943,375 @@ EXPECT=<<EOF
     },
     {
       "start": 190,
-      "end": 203,
+      "end": 192,
+      "type": "offset",
+      "offset": 4198828
+    },
+    {
+      "start": 190,
+      "end": 192,
+      "type": "syntax_highlight",
+      "syntax_highlight": "comment"
+    },
+    {
+      "start": 192,
+      "end": 200,
+      "type": "offset",
+      "offset": 4198828
+    },
+    {
+      "start": 192,
+      "end": 200,
+      "type": "syntax_highlight",
+      "syntax_highlight": "comment"
+    },
+    {
+      "start": 201,
+      "end": 211,
+      "type": "offset",
+      "offset": 4198828
+    },
+    {
+      "start": 201,
+      "end": 211,
+      "type": "syntax_highlight",
+      "syntax_highlight": "comment"
+    },
+    {
+      "start": 212,
+      "end": 216,
+      "type": "offset",
+      "offset": 4198828
+    },
+    {
+      "start": 212,
+      "end": 216,
+      "type": "syntax_highlight",
+      "syntax_highlight": "comment"
+    },
+    {
+      "start": 217,
+      "end": 222,
+      "type": "offset",
+      "offset": 4198828
+    },
+    {
+      "start": 217,
+      "end": 222,
+      "type": "syntax_highlight",
+      "syntax_highlight": "comment"
+    },
+    {
+      "start": 223,
+      "end": 232,
+      "type": "offset",
+      "offset": 4198828
+    },
+    {
+      "start": 223,
+      "end": 232,
+      "type": "syntax_highlight",
+      "syntax_highlight": "comment"
+    },
+    {
+      "start": 233,
+      "end": 243,
+      "type": "offset",
+      "offset": 4198828
+    },
+    {
+      "start": 233,
+      "end": 243,
+      "type": "syntax_highlight",
+      "syntax_highlight": "comment"
+    },
+    {
+      "start": 244,
+      "end": 257,
+      "type": "offset",
+      "offset": 4198828
+    },
+    {
+      "start": 244,
+      "end": 257,
+      "type": "syntax_highlight",
+      "syntax_highlight": "comment"
+    },
+    {
+      "start": 258,
+      "end": 265,
+      "type": "offset",
+      "offset": 4198828
+    },
+    {
+      "start": 258,
+      "end": 265,
+      "type": "syntax_highlight",
+      "syntax_highlight": "comment"
+    },
+    {
+      "start": 266,
+      "end": 282,
+      "type": "offset",
+      "offset": 4198828
+    },
+    {
+      "start": 266,
+      "end": 282,
+      "type": "syntax_highlight",
+      "syntax_highlight": "comment"
+    },
+    {
+      "start": 283,
+      "end": 295,
+      "type": "offset",
+      "offset": 4198828
+    },
+    {
+      "start": 283,
+      "end": 295,
+      "type": "syntax_highlight",
+      "syntax_highlight": "comment"
+    },
+    {
+      "start": 300,
+      "end": 313,
       "type": "function_name",
       "name": "sym.Aeropause",
       "offset": 4199038
     },
     {
-      "start": 190,
-      "end": 203,
+      "start": 300,
+      "end": 313,
       "type": "syntax_highlight",
       "syntax_highlight": "function_name"
     },
     {
-      "start": 204,
-      "end": 205,
+      "start": 314,
+      "end": 315,
       "type": "offset",
       "offset": 4198819
     },
     {
-      "start": 205,
-      "end": 212,
+      "start": 315,
+      "end": 322,
       "type": "syntax_highlight",
       "syntax_highlight": "local_variable"
     },
     {
-      "start": 212,
-      "end": 213,
+      "start": 322,
+      "end": 323,
       "type": "offset",
       "offset": 4198828
     },
     {
-      "start": 213,
-      "end": 217,
+      "start": 323,
+      "end": 327,
       "type": "function_parameter",
       "name": "argc"
     },
     {
-      "start": 213,
-      "end": 217,
+      "start": 323,
+      "end": 327,
       "type": "syntax_highlight",
       "syntax_highlight": "function_parameter"
     },
     {
-      "start": 217,
-      "end": 218,
+      "start": 327,
+      "end": 328,
       "type": "offset",
       "offset": 4198828
     },
     {
-      "start": 218,
-      "end": 222,
+      "start": 328,
+      "end": 332,
       "type": "function_parameter",
       "name": "argv"
     },
     {
-      "start": 218,
-      "end": 222,
+      "start": 328,
+      "end": 332,
       "type": "syntax_highlight",
       "syntax_highlight": "function_parameter"
     },
     {
-      "start": 190,
-      "end": 223,
+      "start": 300,
+      "end": 333,
       "type": "offset",
       "offset": 4198828
     },
     {
-      "start": 229,
-      "end": 231,
+      "start": 339,
+      "end": 341,
       "type": "offset",
       "offset": 4198851
     },
     {
-      "start": 229,
-      "end": 231,
+      "start": 339,
+      "end": 341,
       "type": "syntax_highlight",
       "syntax_highlight": "keyword"
     },
     {
-      "start": 233,
-      "end": 239,
+      "start": 343,
+      "end": 349,
       "type": "local_variable",
       "name": "var_8h"
     },
     {
-      "start": 233,
-      "end": 239,
+      "start": 343,
+      "end": 349,
       "type": "syntax_highlight",
       "syntax_highlight": "local_variable"
     },
     {
-      "start": 240,
-      "end": 242,
+      "start": 350,
+      "end": 352,
       "type": "offset",
       "offset": 4198842
     },
     {
-      "start": 243,
-      "end": 244,
+      "start": 353,
+      "end": 354,
       "type": "offset",
       "offset": 4198842
     },
     {
-      "start": 245,
-      "end": 257,
+      "start": 355,
+      "end": 367,
       "type": "local_variable",
       "name": "in_FS_OFFSET"
     },
     {
-      "start": 245,
-      "end": 257,
+      "start": 355,
+      "end": 367,
       "type": "syntax_highlight",
       "syntax_highlight": "local_variable"
     },
     {
-      "start": 258,
-      "end": 259,
+      "start": 368,
+      "end": 369,
       "type": "offset",
       "offset": 4198842
     },
     {
-      "start": 260,
-      "end": 264,
+      "start": 370,
+      "end": 374,
       "type": "syntax_highlight",
       "syntax_highlight": "constant_variable"
     },
     {
-      "start": 273,
-      "end": 275,
+      "start": 383,
+      "end": 385,
       "type": "offset",
       "offset": 4198853
     },
     {
-      "start": 273,
-      "end": 275,
+      "start": 383,
+      "end": 385,
       "type": "syntax_highlight",
       "syntax_highlight": "comment"
     },
     {
-      "start": 275,
-      "end": 283,
+      "start": 385,
+      "end": 393,
       "type": "offset",
       "offset": 4198853
     },
     {
-      "start": 275,
-      "end": 283,
+      "start": 385,
+      "end": 393,
       "type": "syntax_highlight",
       "syntax_highlight": "comment"
     },
     {
-      "start": 284,
-      "end": 294,
+      "start": 394,
+      "end": 404,
       "type": "offset",
       "offset": 4198853
     },
     {
-      "start": 284,
-      "end": 294,
+      "start": 394,
+      "end": 404,
       "type": "syntax_highlight",
       "syntax_highlight": "comment"
     },
     {
-      "start": 295,
-      "end": 299,
+      "start": 405,
+      "end": 409,
       "type": "offset",
       "offset": 4198853
     },
     {
-      "start": 295,
-      "end": 299,
+      "start": 405,
+      "end": 409,
       "type": "syntax_highlight",
       "syntax_highlight": "comment"
     },
     {
-      "start": 300,
-      "end": 303,
+      "start": 410,
+      "end": 413,
       "type": "offset",
       "offset": 4198853
     },
     {
-      "start": 300,
-      "end": 303,
+      "start": 410,
+      "end": 413,
       "type": "syntax_highlight",
       "syntax_highlight": "comment"
     },
     {
-      "start": 304,
-      "end": 310,
+      "start": 414,
+      "end": 420,
       "type": "offset",
       "offset": 4198853
     },
     {
-      "start": 304,
-      "end": 310,
+      "start": 414,
+      "end": 420,
       "type": "syntax_highlight",
       "syntax_highlight": "comment"
     },
     {
-      "start": 319,
-      "end": 343,
+      "start": 429,
+      "end": 453,
       "type": "function_name",
       "name": "sym.imp.__stack_chk_fail",
       "offset": 4198464
     },
     {
-      "start": 319,
-      "end": 343,
+      "start": 429,
+      "end": 453,
       "type": "syntax_highlight",
       "syntax_highlight": "function_name"
     },
     {
-      "start": 319,
-      "end": 345,
+      "start": 429,
+      "end": 455,
       "type": "offset",
       "offset": 4198853
     },
     {
-      "start": 357,
-      "end": 363,
+      "start": 467,
+      "end": 473,
       "type": "offset",
       "offset": 4198859
     },
     {
-      "start": 357,
-      "end": 363,
+      "start": 467,
+      "end": 473,
       "type": "syntax_highlight",
       "syntax_highlight": "keyword"
     },
     {
-      "start": 364,
-      "end": 365,
+      "start": 474,
+      "end": 475,
       "type": "syntax_highlight",
       "syntax_highlight": "constant_variable"
     },
     {
-      "start": 357,
-      "end": 365,
+      "start": 467,
+      "end": 475,
       "type": "offset",
       "offset": 4198859
     }
