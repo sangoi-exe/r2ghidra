@@ -449,6 +449,17 @@ static void DecompileAttempt(RCore *core, ut64 addr, DecompileMode mode, std::st
 					if (!calleeFunction || r_list_empty (calleeFunction->bbs)) {
 						continue;
 					}
+					// Architecture hints here can reset the caller's supplied types and call links.
+					struct FixedArchDuringCalleePreparation {
+						RCore *core;
+						const bool previous;
+						explicit FixedArchDuringCalleePreparation(RCore *core) : core (core), previous (core->fixedarch) {
+							core->fixedarch = true;
+						}
+						~FixedArchDuringCalleePreparation() {
+							core->fixedarch = previous;
+						}
+					} fixedArch (lockedCore);
 					PrepareFunction (arch, calleeFunction, callee);
 				}
 				int calleeResult;

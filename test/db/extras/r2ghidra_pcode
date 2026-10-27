@@ -1086,7 +1086,7 @@ EXPECT_ERR=<<EOF
 EOF
 RUN
 
-NAME=caller initialization and unclassified failures do not request reconstruction
+NAME=caller decode, initialization and caller-preparation failures do not request reconstruction
 FILE=hex://5589e583e4f083ec1090909090909090c744240407000000e8230000009090909089ec5dc3000000000000000000000000000000000000000000000000000000740e740e740e740e740ec390909090900f040f040f040f040f04
 ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
 CMDS=<<EOF
@@ -1190,5 +1190,81 @@ EXPECT_ERR=<<EOF
 WARN: [r2ghidra] Auxiliary callee decode failed at 0x1040: Bad instruction count exceeded:
     ...
     r0x00001050: Unable to resolve constructor; caller reconstructed without auxiliary input evidence
+EOF
+RUN
+
+NAME=ARM-hinted failing auxiliary preserves a separate supplied call-site contract
+FILE=hex://5589e583e4f083ec1090909090909090c744240407000000e823000000c744240408000000e83600000089ec5dc30000000000000000000000000000000000008b44240883c003c3000000000000000000000000000000000000000000000000740e740e740e740e740ec390909090900f040f040f040f040f04
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+af+ 0x1000 mixed_caller
+afb+ 0x1000 0x1000 46
+af+ 0x1040 good_callee
+afb+ 0x1040 0x1040 8
+af+ 0x1060 failing_callee
+afb+ 0x1060 0x1060 26
+e r2ghidra.lang=x86:LE:32:default:gcc
+e asm.parser=att2intel
+"td unsigned int audited_hole(unsigned int first, unsigned int second);"
+tk calllink.00001018=audited_hole
+s 0x1000
+aha x86 @ 0x1000
+aha arm @ 0x1060
+tk calllink.00001018
+tk func.audited_hole.prototype
+e r2ghidra.deadcode=false
+pdg~good_callee(
+pdg~failing_callee(
+pdg~Auxiliary callee decode failed
+pdg~Incomplete
+pdg~__input_storage~?
+pdgj~good_callee~?
+pdgx~Auxiliary~?
+tk calllink.00001018
+tk func.audited_hole.prototype
+e asm.parser
+e r2ghidra.deadcode=true
+pdg~good_callee(
+pdg~failing_callee(
+pdg~Auxiliary callee decode failed
+pdg~Incomplete
+pdg~__input_storage~?
+pdgj~good_callee~?
+pdgx~Auxiliary~?
+tk calllink.00001018
+tk func.audited_hole.prototype
+e asm.arch
+e anal.arch
+e asm.bits
+e asm.parser
+EOF
+EXPECT=<<EOF
+audited_hole
+fixed
+    good_callee(*(uVar1 - 0x10),7);
+    failing_callee();
+//WARNING: [r2ghidra] Auxiliary callee decode failed at 0x1060: Bad instruction count exceeded:
+    //WARNING: Incomplete call input recovery: unresolved call-relative storage stack[0x8:4]
+0
+1
+1
+audited_hole
+fixed
+att2intel
+    uVar1 = good_callee(*(puVar4 + -0x10),7);
+    uVar2 = failing_callee();
+//WARNING: [r2ghidra] Auxiliary callee decode failed at 0x1060: Bad instruction count exceeded:
+    //WARNING: Incomplete call input recovery: unresolved call-relative storage stack[0x8:4]
+0
+1
+1
+audited_hole
+fixed
+x86
+x86
+32
+att2intel
+EOF
+EXPECT_ERR=<<EOF
 EOF
 RUN
