@@ -905,3 +905,290 @@ EOF
 EXPECT_ERR=<<EOF
 EOF
 RUN
+
+NAME=optional callee decode failure reconstructs the caller once for C JSON and XML
+FILE=hex://5589e583e4f083ec1090909090909090c744240407000000e8230000009090909089ec5dc3000000000000000000000000000000000000000000000000000000740e740e740e740e740ec390909090900f040f040f040f040f04
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+af+ 0x1000 no_competing_caller
+afb+ 0x1000 0x1000 37
+af+ 0x1040 failing_callee
+afb+ 0x1040 0x1040 26
+e r2ghidra.lang=x86:LE:32:default:gcc
+e asm.parser=att2intel
+s 0x1000
+e asm.parser
+tk func.*~?
+tk calllink.*~?
+e r2ghidra.deadcode=false
+pdg~Auxiliary callee decode failed
+pdg~Incomplete
+pdg~failing_callee()~?
+pdg~__input_storage~?
+pdgj~Auxiliary callee decode failed~?
+pdgj~Incomplete~?
+pdgj~__input_storage~?
+pdgx~Auxiliary~?
+pdgx~Incomplete~?
+pdgx~call_input_storage~?
+e r2ghidra.deadcode=true
+pdg~Auxiliary callee decode failed
+pdg~Incomplete
+pdg~failing_callee()~?
+pdg~__input_storage~?
+pdgj~Auxiliary callee decode failed~?
+pdgj~Incomplete~?
+pdgj~__input_storage~?
+pdgx~Auxiliary~?
+pdgx~Incomplete~?
+pdgx~call_input_storage~?
+e asm.parser
+tk func.*~?
+tk calllink.*~?
+af- 0x1040
+af+ 0x1040 failing_callee
+pdg~Auxiliary callee decode failed~?
+pdg~Incomplete~?
+pdg~failing_callee()~?
+tk func.*~?
+tk calllink.*~?
+EOF
+EXPECT=<<EOF
+att2intel
+0
+0
+//WARNING: [r2ghidra] Auxiliary callee decode failed at 0x1040: Bad instruction count exceeded:
+    //WARNING: Incomplete call input recovery: unresolved call-relative storage stack[0x8:4]
+1
+0
+1
+1
+0
+1
+1
+0
+//WARNING: [r2ghidra] Auxiliary callee decode failed at 0x1040: Bad instruction count exceeded:
+    //WARNING: Incomplete call input recovery: unresolved call-relative storage stack[0x8:4]
+1
+0
+1
+1
+0
+1
+1
+0
+att2intel
+0
+0
+0
+1
+1
+0
+0
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=failed optional callee discards earlier successful auxiliary evidence
+FILE=hex://5589e583e4f083ec1090909090909090c744240407000000e823000000c744240408000000e83600000089ec5dc30000000000000000000000000000000000008b44240883c003c3000000000000000000000000000000000000000000000000740e740e740e740e740ec390909090900f040f040f040f040f04
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+af+ 0x1000 mixed_caller
+afb+ 0x1000 0x1000 46
+af+ 0x1040 good_callee
+afb+ 0x1040 0x1040 8
+af+ 0x1060 failing_callee
+e r2ghidra.lang=x86:LE:32:default:gcc
+s 0x1000
+pdg~__call_incomplete
+afb+ 0x1060 0x1060 26
+pdg~Auxiliary callee decode failed
+pdg~Incomplete~?
+pdg~__input_storage~?
+pdg~good_callee()~?
+pdgj~Auxiliary callee decode failed~?
+pdgj~__input_storage~?
+pdgx~Auxiliary~?
+pdgx~call_input_storage~?
+e r2ghidra.deadcode=true
+pdg~Auxiliary callee decode failed
+pdg~Incomplete~?
+pdg~__input_storage~?
+pdgj~Auxiliary callee decode failed~?
+pdgj~__input_storage~?
+pdgx~Auxiliary~?
+pdgx~call_input_storage~?
+tk func.*~?
+tk calllink.*~?
+EOF
+EXPECT=<<EOF
+    __call_incomplete(good_callee,__input_storage("stack",0x8,4,7));
+//WARNING: [r2ghidra] Auxiliary callee decode failed at 0x1060: Bad instruction count exceeded:
+2
+0
+1
+1
+0
+1
+0
+//WARNING: [r2ghidra] Auxiliary callee decode failed at 0x1060: Bad instruction count exceeded:
+2
+0
+1
+0
+1
+0
+0
+0
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=supplied call-site contract remains authoritative with an undecodable callee body
+FILE=hex://5589e583e4f083ec1090909090909090c744240407000000e8230000009090909089ec5dc3000000000000000000000000000000000000000000000000000000740e740e740e740e740ec390909090900f040f040f040f040f04
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+af+ 0x1000 no_competing_caller
+afb+ 0x1000 0x1000 37
+af+ 0x1040 failing_callee
+afb+ 0x1040 0x1040 26
+e r2ghidra.lang=x86:LE:32:default:gcc
+s 0x1000
+"td unsigned int audited_hole(unsigned int first, unsigned int second);"
+tk calllink.00001018=audited_hole
+pdg~failing_callee(
+pdg~Auxiliary~?
+pdgj~__input_storage~?
+pdgx~call_input_storage~?
+e r2ghidra.deadcode=true
+pdg~failing_callee(
+pdg~Auxiliary~?
+pdgj~__input_storage~?
+pdgx~call_input_storage~?
+tk calllink.00001018
+tk func.audited_hole.prototype
+EOF
+EXPECT=<<EOF
+    failing_callee(*(uVar1 - 0x10),7);
+0
+0
+0
+    uVar2 = failing_callee(*(puVar4 + -0x10),7);
+0
+0
+0
+audited_hole
+fixed
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=caller initialization and unclassified failures do not request reconstruction
+FILE=hex://5589e583e4f083ec1090909090909090c744240407000000e8230000009090909089ec5dc3000000000000000000000000000000000000000000000000000000740e740e740e740e740ec390909090900f040f040f040f040f04
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+af+ 0x1000 no_competing_caller
+afb+ 0x1000 0x1000 37
+af+ 0x1040 failing_callee
+afb+ 0x1040 0x1040 26
+e r2ghidra.lang=x86:LE:32:default:gcc
+s 0x1040
+pdgj~Bad instruction count exceeded~?
+pdgj~Auxiliary~?
+s 0x1000
+e r2ghidra.lang=absent:LE:32:default:gcc
+pdgj~No sleigh specification~?
+pdgj~Auxiliary~?
+e r2ghidra.lang=x86:LE:32:default:gcc
+tk calllink.00001018=missing_prototype
+pdgj~Unavailable parameter-list knowledge~?
+pdgj~Auxiliary~?
+EOF
+EXPECT=<<EOF
+1
+0
+1
+0
+1
+0
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=callee architecture and bitness hints preserve reconstructed caller interpretation
+FILE=hex://5589e583e4f083ec1090909090909090c744240407000000e8230000009090909089ec5dc3000000000000000000000000000000000000000000000000000000740e740e740e740e740ec390909090900f040f040f040f040f04
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=0
+CMDS=<<EOF
+af+ 0x1000 no_competing_caller
+afb+ 0x1000 0x1000 37
+af+ 0x1040 failing_callee
+afb+ 0x1040 0x1040 26
+ahb 32 @ 0x1000
+ahb 16 @ 0x1040
+e r2ghidra.lang=
+e asm.parser=att2intel
+s 0x1000
+e asm.bits
+e asm.parser
+pdg~Auxiliary callee decode failed~?
+e asm.bits
+e asm.parser
+pdg~stack0xfffffffc~?
+e asm.bits
+e asm.parser
+e asm.arch
+e anal.arch
+aha x86 @ 0x1000
+aha arm @ 0x1040
+pdg~Auxiliary callee decode failed~?
+e asm.arch
+e anal.arch
+e asm.bits
+pdg~Incomplete~?
+EOF
+EXPECT=<<EOF
+32
+att2intel
+1
+32
+att2intel
+2
+32
+att2intel
+x86
+x86
+1
+x86
+x86
+32
+1
+EOF
+EXPECT_ERR=<<EOF
+EOF
+RUN
+
+NAME=comment commands report optional callee failure without changing command output
+FILE=hex://5589e583e4f083ec1090909090909090c744240407000000e8230000009090909089ec5dc3000000000000000000000000000000000000000000000000000000740e740e740e740e740ec390909090900f040f040f040f040f04
+ARGS=-a x86 -b 32 -m 0x1000 -e log.level=3
+CMDS=<<EOF
+af+ 0x1000 no_competing_caller
+afb+ 0x1000 0x1000 37
+af+ 0x1040 failing_callee
+afb+ 0x1040 0x1040 26
+e r2ghidra.lang=x86:LE:32:default:gcc
+s 0x1000
+pdg*~CCu~?
+EOF
+EXPECT=<<EOF
+5
+EOF
+EXPECT_ERR=<<EOF
+WARN: [r2ghidra] Auxiliary callee decode failed at 0x1040: Bad instruction count exceeded:
+    ...
+    r0x00001050: Unable to resolve constructor; caller reconstructed without auxiliary input evidence
+EOF
+RUN

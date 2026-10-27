@@ -379,12 +379,17 @@ static void PrepareFunction(R2Architecture &arch, RAnalFunction *function, Funcd
 	}
 }
 
-static void Decompile(RCore *core, ut64 addr, DecompileMode mode, std::stringstream &out_stream, RCodeMeta **out_code, Harvest *out_harvest = nullptr) {
+struct AuxiliaryCalleeDecodeFailure {
+	ut64 address;
+	std::string reason;
+};
+
+static void DecompileAttempt(RCore *core, ut64 addr, DecompileMode mode, std::stringstream &out_stream, RCodeMeta **out_code, Harvest *out_harvest, const std::string &sleighId, bool collectAuxiliary, const AuxiliaryCalleeDecodeFailure *failure) {
 	RAnalFunction *function = r_anal_get_fcn_in (core->anal, addr, R_ANAL_FCN_TYPE_NULL);
 	if (!function) {
 		throw LowlevelError ("No function at this offset");
 	}
-	R2Architecture arch (core, cfg_var_sleighid.GetString (core->config));
+	R2Architecture arch (core, sleighId);
 	DocumentStorage store = DocumentStorage ();
 	arch.max_implied_ref = cfg_var_maximplref.GetInt (core->config);
 	arch.readonlypropagate = cfg_var_roprop.GetBool (core->config);
@@ -421,12 +426,10 @@ static void Decompile(RCore *core, ut64 addr, DecompileMode mode, std::stringstr
 	PcodeSnapshot snapshot;
 	PcodeSnapshot *capture = exportDeadcode ? &snapshot : nullptr;
 	int res;
-#ifndef DEBUG_EXCEPTIONS
 	try {
-#endif
 		PrepareFunction (arch, function, func);
 		res = PerformWithSnapshot (*action, *func, capture);
-		if (res >= 0) {
+		if (collectAuxiliary && res >= 0) {
 			std::vector<Funcdata *> callees;
 			std::set<Funcdata *> seen;
 			for (int4 i = 0; i < func->numCalls (); i++) {
@@ -448,7 +451,13 @@ static void Decompile(RCore *core, ut64 addr, DecompileMode mode, std::stringstr
 					}
 					PrepareFunction (arch, calleeFunction, callee);
 				}
-				if (PerformWithSnapshot (*action, *callee, nullptr) < 0 || !callee->isProcComplete ()) {
+				int calleeResult;
+				try {
+					calleeResult = PerformWithSnapshot (*action, *callee, nullptr);
+				} catch (const BadDataError &error) {
+					throw AuxiliaryCalleeDecodeFailure { callee->getAddress ().getOffset (), error.explain };
+				}
+				if (calleeResult < 0 || !callee->isProcComplete ()) {
 					throw LowlevelError ("Callee input analysis did not complete");
 				}
 				processedCallee = true;
@@ -465,15 +474,25 @@ static void Decompile(RCore *core, ut64 addr, DecompileMode mode, std::stringstr
 			action = arch.allacts.toggleAction (arch.allacts.getCurrentName (), "deadcode", false);
 			res = PerformWithSnapshot (*action, *func, nullptr);
 		}
-#ifndef DEBUG_EXCEPTIONS
-	} catch (const LowlevelError &error) {
+	} catch (const AuxiliaryCalleeDecodeFailure &) {
 		arch.getCore()->sleepEndForce ();
-		throw error;
-	}
+		throw;
+#ifndef DEBUG_EXCEPTIONS
+	} catch (const LowlevelError &) {
+		arch.getCore()->sleepEndForce ();
+		throw;
 #endif
+	}
 	arch.getCore()->sleepEnd ();
 	if (res < 0) {
 		R_LOG_WARN ("break");
+	}
+	if (failure) {
+		const std::string warning = "[r2ghidra] Auxiliary callee decode failed at " + hex (failure->address) + ": " + failure->reason + "; caller reconstructed without auxiliary input evidence";
+		func->warningHeader (warning);
+		if (out_harvest || mode == DecompileMode::STATEMENTS) {
+			R_LOG_WARN ("%s", warning.c_str ());
+		}
 	}
 	if (cfg_var_verbose.GetBool (core->config)) {
 		for (const auto &warning : arch.getWarnings()) {
@@ -538,6 +557,57 @@ static void Decompile(RCore *core, ut64 addr, DecompileMode mode, std::stringstr
 		break;
 	default:
 		break;
+	}
+}
+
+struct CallerInterpretation {
+	std::string asmArch;
+	std::string analArch;
+	std::string cpu;
+	ut64 bits;
+	bool bigEndian;
+	bool effectiveBigEndian;
+
+	explicit CallerInterpretation(RCore *core)
+		: asmArch (r_config_get (core->config, "asm.arch")), analArch (r_config_get (core->config, "anal.arch")),
+		  cpu (r_config_get (core->config, "asm.cpu")), bits (r_config_get_i (core->config, "asm.bits")),
+		  bigEndian (r_config_get_b (core->config, "cfg.bigendian")), effectiveBigEndian (R_ARCH_CONFIG_IS_BIG_ENDIAN (core->rasm->config)) {}
+
+	void restore(RCore *core) const {
+		RConfig *config = core->config;
+		// Setting asm.arch can also change the analysis architecture, CPU, bits and effective endianness.
+		if (asmArch != r_config_get (config, "asm.arch")) {
+			r_config_set (config, "asm.arch", asmArch.c_str ());
+		}
+		if (analArch != r_config_get (config, "anal.arch")) {
+			r_config_set (config, "anal.arch", analArch.c_str ());
+		}
+		if (cpu != r_config_get (config, "asm.cpu")) {
+			r_config_set (config, "asm.cpu", cpu.c_str ());
+		}
+		if (bits != r_config_get_i (config, "asm.bits")) {
+			r_config_set_i (config, "asm.bits", bits);
+		}
+		if (bigEndian != r_config_get_b (config, "cfg.bigendian") || effectiveBigEndian != R_ARCH_CONFIG_IS_BIG_ENDIAN (core->rasm->config)) {
+			r_config_set_b (config, "cfg.bigendian", bigEndian);
+		}
+		if (asmArch != r_config_get (config, "asm.arch") || analArch != r_config_get (config, "anal.arch")
+				|| cpu != r_config_get (config, "asm.cpu") || bits != r_config_get_i (config, "asm.bits")
+				|| bigEndian != r_config_get_b (config, "cfg.bigendian") || effectiveBigEndian != R_ARCH_CONFIG_IS_BIG_ENDIAN (core->rasm->config)) {
+			throw LowlevelError ("Cannot restore caller interpretation after auxiliary callee decode failure");
+		}
+	}
+};
+
+static void Decompile(RCore *core, ut64 addr, DecompileMode mode, std::stringstream &out_stream, RCodeMeta **out_code, Harvest *out_harvest = nullptr) {
+	const std::string sleighId = cfg_var_sleighid.GetString (core->config);
+	const CallerInterpretation caller (core);
+	try {
+		DecompileAttempt (core, addr, mode, out_stream, out_code, out_harvest, sleighId, true, nullptr);
+	} catch (const AuxiliaryCalleeDecodeFailure &failure) {
+		// DecompileAttempt has destroyed its architecture and all of its analysis objects.
+		caller.restore (core);
+		DecompileAttempt (core, addr, mode, out_stream, out_code, out_harvest, sleighId, false, &failure);
 	}
 }
 
